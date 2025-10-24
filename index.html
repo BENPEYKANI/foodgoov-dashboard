@@ -14,7 +14,7 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
   <script>
-    // Theme config for Tailwind + custom tokens
+    // Tailwind custom theme
     tailwind.config = {
       theme: {
         extend: {
@@ -50,11 +50,10 @@
   <script type="text/babel">
     const { useState, useEffect } = React;
 
-    // storage keys
-    const STORAGE_KEY = "foodgoov_dash_cfg_v3";
+    const STORAGE_KEY = "foodgoov_dash_cfg_v4";
     const THEME_KEY = "foodgoov_theme";
 
-    // ----- theme helpers -----
+    // THEME ------------------------------------------------------------------
     function setThemeAttr(mode) {
       document.documentElement.setAttribute("data-theme", mode);
     }
@@ -77,7 +76,7 @@
       return { theme, toggle };
     }
 
-    // ----- style helpers -----
+    // STYLE HELPERS ----------------------------------------------------------
     function classNames(...arr) {
       return arr.filter(Boolean).join(" ");
     }
@@ -265,7 +264,7 @@
       }
     }
 
-    // config (apiBase, apiKey) stockée dans localStorage
+    // LOCAL CONFIG (apiBase, apiKey) -----------------------------------------
     function useConfig() {
       const [apiBase, setApiBase] = useState("https://foodgoov.onrender.com");
       const [apiKey, setApiKey] = useState("");
@@ -291,6 +290,7 @@
       return { apiBase, setApiBase, apiKey, setApiKey };
     }
 
+    // MAIN APP ---------------------------------------------------------------
     function App() {
       const { apiBase, setApiBase, apiKey, setApiKey } = useConfig();
       const { theme, toggle } = useTheme();
@@ -300,18 +300,22 @@
       const [statusOK, setStatusOK] = useState(null); // true/false/null
       const [loading, setLoading] = useState(false);
 
+      // tokens bruts
       const [tokens, setTokens] = useState([]);
       const [limit, setLimit] = useState(100);
       const [offset, setOffset] = useState(0);
 
-      // analytics dérivés des tokens
+      // stats analytiques dérivées
       const [stats, setStats] = useState({
         totalTokens: 0,
         totalVolume: 0,
         distinctDomains: 0,
         byCategory: {},
+        topProducers: [],       // [{producer_id, volume}, ...]
+        lastMint: null          // {producer_id, issued_at}
       });
 
+      // formulaire mint
       const [mintBody, setMintBody] = useState(() =>
         JSON.stringify(
           {
@@ -334,48 +338,71 @@
       );
       const [mintResult, setMintResult] = useState(null);
 
-      // à chaque changement de tokens, recalculer les stats
+      // recalcul stats à chaque fois qu'on met à jour tokens
       useEffect(() => {
         const s = computeStats(tokens);
         setStats(s);
       }, [tokens]);
 
+      // calcul des stats business
       function computeStats(items) {
-        // total tokens
         const totalTokens = items.length;
 
-        // total volume : sum(quantity.count) si présent
         let totalVolume = 0;
-        // distinct domain_id
         const domainSet = new Set();
-        // by category
         const categoryMap = {};
+        const volumeByProducer = {}; // producer_id -> total volume
+        let lastMint = null;        // on prend le plus récent issued_at
 
         for (const t of items) {
           // volume
-          // dans l'API list_tokens on remet quantity comme {unit,count}
           if (t.quantity && typeof t.quantity.count === "number") {
             totalVolume += t.quantity.count;
+
+            // par producteur
+            if (t.producer_id) {
+              volumeByProducer[t.producer_id] =
+                (volumeByProducer[t.producer_id] || 0) + t.quantity.count;
+            }
           }
 
-          // domain
+          // domaines uniques
           if (t.domain_id) {
             domainSet.add(t.domain_id);
           }
 
-          // category
+          // catégories
           if (t.category) {
             categoryMap[t.category] = (categoryMap[t.category] || 0) + 1;
           }
+
+          // dernier mint (le plus récent issued_at)
+          if (t.issued_at) {
+            const ts = Date.parse(t.issued_at);
+            if (!isNaN(ts)) {
+              if (!lastMint || ts > Date.parse(lastMint.issued_at || 0)) {
+                lastMint = {
+                  producer_id: t.producer_id || "—",
+                  issued_at: t.issued_at
+                };
+              }
+            }
+          }
         }
 
-        const distinctDomains = domainSet.size;
+        // transformer volumeByProducer en tableau trié
+        const topProducers = Object.entries(volumeByProducer)
+          .map(([producer_id, volume]) => ({ producer_id, volume }))
+          .sort((a, b) => b.volume - a.volume)
+          .slice(0, 3); // top 3
 
         return {
           totalTokens,
           totalVolume,
-          distinctDomains,
+          distinctDomains: domainSet.size,
           byCategory: categoryMap,
+          topProducers,
+          lastMint
         };
       }
 
@@ -394,17 +421,13 @@
         }
       }
 
-      // charge les tokens
+      // charger tokens
       async function loadTokens() {
         setLoading(true);
         try {
           const r = await fetch(
             `${apiBase}/v1/admin/tokens?limit=${limit}&offset=${offset}`,
-            {
-              headers: {
-                "x-api-key": apiKey
-              }
-            }
+            { headers: { "x-api-key": apiKey } }
           );
           const j = await r.json();
           if (!r.ok) throw new Error(j?.detail || r.statusText);
@@ -421,7 +444,7 @@
         }
       }
 
-      // créer un token
+      // mint nouveau token
       async function mintToken() {
         setLoading(true);
         setMintResult(null);
@@ -448,7 +471,7 @@
         }
       }
 
-      // appliquer couleurs selon theme
+      // appliquer couleurs du thème clair/sombre
       useEffect(() => {
         if (theme === "dark") {
           document.documentElement.style.setProperty("--panel-bg", "#1f2937");
@@ -469,9 +492,10 @@
 
       return (
         <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-8">
-          {/* HEADER */}
+          {/* HEADER ------------------------------------------------------- */}
           <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div className="flex items-start md:items-center gap-3">
+              {/* mini-logo FG */}
               <div className="flex items-center justify-center w-10 h-10 rounded-full bg-brand text-white font-semibold text-sm shadow-lg">
                 FG
               </div>
@@ -516,7 +540,7 @@
             </div>
           </header>
 
-          {/* CONFIG */}
+          {/* CONFIG ------------------------------------------------------- */}
           <Card>
             <div className="grid md:grid-cols-3 gap-6 items-end">
               <Field label="API Base URL">
@@ -547,7 +571,7 @@
             </div>
           </Card>
 
-          {/* ANALYTICS SECTION */}
+          {/* ANALYTICS TOP ROW -------------------------------------------- */}
           <div className="grid md:grid-cols-4 gap-4">
             <Card>
               <InfoStat
@@ -561,7 +585,7 @@
               <InfoStat
                 label="Volume total"
                 value={stats.totalVolume}
-                sub="Total quantité (ex: bouteilles)"
+                sub="Quantité totale (bouteilles, etc.)"
               />
             </Card>
 
@@ -615,7 +639,115 @@
             </Card>
           </div>
 
-          {/* MAIN GRID */}
+          {/* ANALYTICS SECOND ROW ---------------------------------------- */}
+          <div className="grid md:grid-cols-2 gap-4">
+            {/* TOP PRODUCTEURS */}
+            <Card>
+              <h2
+                className="text-lg font-semibold mb-4 flex items-center gap-2"
+                style={{ color: getVar("--text-main") }}
+              >
+                <span>Top producteurs</span>
+                <span className="text-xs font-normal text-brand bg-brand/10 px-2 py-0.5 rounded-full">
+                  volume total
+                </span>
+              </h2>
+
+              {stats.topProducers.length === 0 ? (
+                <div
+                  className="text-sm"
+                  style={{ color: getVar("--text-sub") }}
+                >
+                  Pas encore assez de données.
+                </div>
+              ) : (
+                <div className="space-y-3 text-sm">
+                  {stats.topProducers.map((p, i) => (
+                    <div
+                      key={p.producer_id + i}
+                      className="flex items-start justify-between rounded-xl border p-4 bg-[color:var(--panel-bg)] border-[color:var(--border-col)] shadow-sm"
+                      style={styleVars()}
+                    >
+                      <div className="min-w-0">
+                        <div
+                          className="font-medium text-[color:var(--text-main)] truncate"
+                          title={p.producer_id}
+                        >
+                          {p.producer_id}
+                        </div>
+                        <div
+                          className="text-[11px]"
+                          style={{ color: getVar("--text-sub") }}
+                        >
+                          Rang #{i + 1}
+                        </div>
+                      </div>
+                      <div
+                        className="text-right font-semibold text-[color:var(--text-main)]"
+                        title={String(p.volume)}
+                      >
+                        {p.volume}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            {/* DERNIER MINT */}
+            <Card>
+              <h2
+                className="text-lg font-semibold mb-4"
+                style={{ color: getVar("--text-main") }}
+              >
+                Dernier mint
+              </h2>
+
+              {!stats.lastMint ? (
+                <div
+                  className="text-sm"
+                  style={{ color: getVar("--text-sub") }}
+                >
+                  Aucun mint trouvé.
+                </div>
+              ) : (
+                <div className="space-y-3 text-sm">
+                  <div
+                    className="rounded-xl border p-4 bg-[color:var(--panel-bg)] border-[color:var(--border-col)] shadow-sm"
+                    style={styleVars()}
+                  >
+                    <div
+                      className="text-xs font-medium uppercase tracking-wide mb-1"
+                      style={{ color: getVar("--text-sub") }}
+                    >
+                      Producteur
+                    </div>
+                    <div
+                      className="text-sm font-semibold break-words"
+                      style={{ color: getVar("--text-main") }}
+                    >
+                      {stats.lastMint.producer_id || "—"}
+                    </div>
+
+                    <div
+                      className="text-xs font-medium uppercase tracking-wide mb-1 mt-4"
+                      style={{ color: getVar("--text-sub") }}
+                    >
+                      Date
+                    </div>
+                    <div
+                      className="text-sm font-semibold"
+                      style={{ color: getVar("--text-main") }}
+                    >
+                      {prettyDate(stats.lastMint.issued_at)}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </Card>
+          </div>
+
+          {/* MAIN GRID: LIST + MINT + HELP -------------------------------- */}
           <div className="grid md:grid-cols-3 gap-8">
             {/* TOKEN LIST */}
             <Card>
@@ -817,7 +949,7 @@
                     style={{ color: getVar("--text-sub") }}
                   >
                     La clé API reste dans ton navigateur.
-                    Elle n'est jamais envoyée à un service tiers.
+                    Elle n'est jamais envoyée ailleurs.
                   </div>
                 </div>
               </div>
@@ -838,8 +970,8 @@
                   className="text-[11px] mt-3 leading-relaxed"
                   style={{ color: getVar("--text-sub") }}
                 >
-                  Le thème, l'URL API et la clé API sont mémorisés localement
-                  sur cet appareil (localStorage).
+                  Le thème, l'URL API et la clé API
+                  sont mémorisés localement (localStorage).
                 </div>
               </div>
             </Card>
