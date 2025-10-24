@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="fr" class="bg-gray-50 text-gray-900">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FoodGoov • Vérification du lot</title>
+  <meta name="description" content="Vérification authentique d'un lot via FoodGoov" />
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <script>
+    // petit helper pour formatter la date
+    function prettyDate(s) {
+      try {
+        if (!s) return "";
+        const d = new Date(s);
+        return d.toLocaleString();
+      } catch {
+        return s;
+      }
+    }
+
+    async function main() {
+      const statusEl = document.getElementById("status");
+      const detailsEl = document.getElementById("details");
+      const metaEl = document.getElementById("meta");
+      const tokenIdEl = document.getElementById("tokenId");
+      const warnEl = document.getElementById("warn");
+
+      // 1. Récupère ?token_id=... dans l'URL
+      const params = new URLSearchParams(window.location.search);
+      const tokenId = params.get("token_id");
+
+      if (!tokenId) {
+        statusEl.innerText = "Aucun token fourni.";
+        warnEl.classList.remove("hidden");
+        warnEl.innerText = "Ajoutez ?token_id=... dans l'URL.";
+        return;
+      }
+
+      tokenIdEl.innerText = tokenId;
+
+      // 2. Appelle l'API publique /v1/tokens/{token_id}
+      // IMPORTANT : c'est une route publique chez toi → pas besoin de x-api-key
+      const apiBase = "https://foodgoov.onrender.com";
+
+      let data = null;
+      let ok = false;
+      try {
+        const r = await fetch(`${apiBase}/v1/tokens/${encodeURIComponent(tokenId)}`);
+        data = await r.json();
+        ok = r.ok;
+      } catch (err) {
+        ok = false;
+        data = { error: String(err.message || err) };
+      }
+
+      if (!ok) {
+        // Token inconnu
+        statusEl.innerText = "❌ Lot inconnu / non trouvé";
+        statusEl.classList.add("text-red-600");
+        warnEl.classList.remove("hidden");
+        warnEl.innerText =
+          "Ce code ne correspond pas à un lot validé dans FoodGoov. " +
+          "Veuillez contacter le producteur ou l'importateur.";
+        return;
+      }
+
+      // 3. Ici tu peux enrichir avec plus d'infos si tu modifies le backend
+      // Pour l'instant, notre backend renvoie juste { token_id: "0x..." }
+      // Donc on va afficher ce qu'on sait, mais on prévoit la suite.
+
+      statusEl.innerText = "✅ Lot authentifié";
+      statusEl.classList.add("text-emerald-600");
+
+      // On met dans 'details' les infos disponibles.
+      // Plus tard on inclura category, domain_id, vintage_year, batch_code...
+      // Pour ça il faudra que /v1/tokens/{token_id} renvoie plus de colonnes.
+      detailsEl.innerHTML = `
+        <div class="text-sm text-gray-600">
+          <div class="font-medium text-gray-900 text-base mb-2">
+            Identifiant du lot (token):
+          </div>
+          <div class="font-mono break-all text-xs bg-gray-100 rounded-lg px-3 py-2 text-gray-800">
+            ${data.token_id || "(non fourni)"}
+          </div>
+        </div>
+      `;
+
+      // métadonnées basiques
+      metaEl.innerText = "Vérifié via FoodGoov • " + prettyDate(new Date().toISOString());
+    }
+
+    window.addEventListener("DOMContentLoaded", main);
+  </script>
+</head>
+
+<body class="min-h-screen bg-gray-50 text-gray-900 flex items-center justify-center p-6">
+  <div class="w-full max-w-md space-y-6">
+
+    <!-- Header / Branding -->
+    <div class="flex items-start gap-3">
+      <div class="flex items-center justify-center w-10 h-10 rounded-full bg-emerald-600 text-white font-semibold text-sm shadow-lg">
+        FG
+      </div>
+      <div>
+        <div class="text-xl font-semibold leading-tight text-gray-900">
+          Vérification du lot
+        </div>
+        <div class="text-sm text-gray-500">
+          Traçabilité FoodGoov
+        </div>
+      </div>
+    </div>
+
+    <!-- Status et warning -->
+    <div class="rounded-2xl shadow p-5 border border-gray-200 bg-white">
+      <div id="status" class="text-lg font-semibold text-gray-900 mb-2">
+        Vérification en cours…
+      </div>
+      <div id="warn" class="text-sm text-red-600 hidden"></div>
+    </div>
+
+    <!-- Fiche lot -->
+    <div class="rounded-2xl shadow p-5 border border-gray-200 bg-white space-y-4">
+      <div class="text-xs font-medium uppercase tracking-wide text-gray-500">
+        Identifiant scanné
+      </div>
+      <div id="tokenId" class="font-mono break-all text-[11px] bg-gray-100 rounded-lg px-3 py-2 text-gray-800">
+        (chargement…)
+      </div>
+
+      <div class="border-t border-gray-200 pt-4">
+        <div class="text-xs font-medium uppercase tracking-wide text-gray-500 mb-2">
+          Détails du lot
+        </div>
+        <div id="details" class="text-sm text-gray-700">
+          Récupération…
+        </div>
+      </div>
+    </div>
+
+    <!-- Meta -->
+    <div class="text-center text-[11px] text-gray-500 leading-relaxed" id="meta">
+      —
+    </div>
+
+    <div class="text-center text-[10px] text-gray-400">
+      FoodGoov garantit l’unicité cryptographique du lot et sa déclaration
+      par le producteur / émetteur enregistré.
+    </div>
+  </div>
+</body>
+</html>
