@@ -14,39 +14,13 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
   <script>
-    // Mode clair/sombre custom via data-theme sur <html>
-    // On ajoute nos couleurs dynamiques ici pour Tailwind
+    // Theme config for Tailwind + custom tokens
     tailwind.config = {
       theme: {
         extend: {
           colors: {
             brand: {
-              DEFAULT: "#16a34a", /* vert FoodGoov */
-              fg: "#16a34a",
-            },
-            surface: {
-              light: "#ffffff",
-              dark: "#1f2937"
-            },
-            panel: {
-              light: "#ffffff",
-              dark: "#111827"
-            },
-            soft: {
-              light: "#f9fafb",
-              dark: "#1f2937"
-            },
-            bordercol: {
-              light: "#e5e7eb",
-              dark: "#374151"
-            },
-            textmain: {
-              light: "#0f172a",
-              dark: "#f8fafc"
-            },
-            textsub: {
-              light: "#6b7280",
-              dark: "#9ca3af"
+              DEFAULT: "#16a34a"
             }
           },
           boxShadow: {
@@ -63,7 +37,6 @@
   </script>
 
   <style>
-    /* Gestion du thème clair/sombre via l'attribut data-theme sur le html */
     html[data-theme='dark'] {
       background-color: #0f172a;
       color: #f8fafc;
@@ -77,10 +50,11 @@
   <script type="text/babel">
     const { useState, useEffect } = React;
 
-    // ---- utilitaires UI réutilisables ----
-    const STORAGE_KEY = "foodgoov_dash_cfg_v2";
+    // storage keys
+    const STORAGE_KEY = "foodgoov_dash_cfg_v3";
     const THEME_KEY = "foodgoov_theme";
 
+    // ----- theme helpers -----
     function setThemeAttr(mode) {
       document.documentElement.setAttribute("data-theme", mode);
     }
@@ -97,18 +71,31 @@
       }, [theme]);
 
       function toggle() {
-        setTheme(t => (t === "dark" ? "light" : "dark"));
+        setTheme((t) => (t === "dark" ? "light" : "dark"));
       }
 
       return { theme, toggle };
     }
 
+    // ----- style helpers -----
     function classNames(...arr) {
       return arr.filter(Boolean).join(" ");
     }
 
-    function Card({children}) {
-      // panneau visuel type SaaS
+    function getVar(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name);
+    }
+
+    function styleVars() {
+      return {
+        "--panel-bg": getVar("--panel-bg"),
+        "--border-col": getVar("--border-col"),
+        "--text-main": getVar("--text-main"),
+        "--text-sub": getVar("--text-sub"),
+      };
+    }
+
+    function Card({ children }) {
       return (
         <div
           className="
@@ -119,19 +106,14 @@
             bg-[color:var(--panel-bg)]
             border-[color:var(--border-col)]
           "
-          style={{
-            "--panel-bg": getComputedStyle(document.documentElement)
-              .getPropertyValue("--panel-bg") || "",
-            "--border-col": getComputedStyle(document.documentElement)
-              .getPropertyValue("--border-col") || "",
-          }}
+          style={styleVars()}
         >
           {children}
         </div>
       );
     }
 
-    function Input({className="", ...props}) {
+    function Input({ className = "", ...props }) {
       return (
         <input
           {...props}
@@ -146,7 +128,7 @@
       );
     }
 
-    function Textarea({className="", ...props}) {
+    function Textarea({ className = "", ...props }) {
       return (
         <textarea
           {...props}
@@ -161,7 +143,7 @@
       );
     }
 
-    function Button({children, className="", ...props}) {
+    function Button({ children, className = "", ...props }) {
       return (
         <button
           {...props}
@@ -176,7 +158,7 @@
       );
     }
 
-    function SubButton({children, className="", ...props}) {
+    function SubButton({ children, className = "", ...props }) {
       return (
         <button
           {...props}
@@ -193,7 +175,7 @@
       );
     }
 
-    function Field({label, children}) {
+    function Field({ label, children }) {
       return (
         <div className="flex flex-col text-sm mb-4">
           {label && (
@@ -209,14 +191,12 @@
       );
     }
 
-    function Badge({ok, children}) {
+    function Badge({ ok, children }) {
       return (
         <span
           className={classNames(
             "inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium",
-            ok
-              ? "bg-emerald-600 text-white"
-              : "bg-red-600 text-white"
+            ok ? "bg-emerald-600 text-white" : "bg-red-600 text-white"
           )}
         >
           <span
@@ -230,31 +210,8 @@
       );
     }
 
-    function InfoRow({label, value, mono}) {
-      return (
-        <div className="text-xs flex flex-col">
-          <div
-            className="font-medium"
-            style={{ color: getVar("--text-main") }}
-          >
-            {label}
-          </div>
-          <div
-            className={classNames(
-              "truncate",
-              mono ? "font-mono" : "text-[color:var(--text-sub)]"
-            )}
-            style={{ color: mono ? getVar("--text-main") : getVar("--text-sub") }}
-            title={value}
-          >
-            {value}
-          </div>
-        </div>
-      );
-    }
-
-    function Copy({text}) {
-      const [done, setDone] = React.useState(false);
+    function Copy({ text }) {
+      const [done, setDone] = useState(false);
       return (
         <button
           className="text-[10px] underline text-brand font-medium"
@@ -271,21 +228,44 @@
       );
     }
 
-    // helpers de thèmes dynamiques (CSS vars)
-    function styleVars() {
-      return {
-        "--panel-bg": getVar("--panel-bg"),
-        "--border-col": getVar("--border-col"),
-        "--text-main": getVar("--text-main"),
-        "--text-sub": getVar("--text-sub"),
-      };
+    function InfoStat({ label, value, sub }) {
+      return (
+        <div className="flex flex-col min-w-[120px]">
+          <div
+            className="text-xs uppercase font-medium tracking-wide mb-1"
+            style={{ color: getVar("--text-sub") }}
+          >
+            {label}
+          </div>
+          <div
+            className="text-xl font-semibold leading-none"
+            style={{ color: getVar("--text-main") }}
+          >
+            {value}
+          </div>
+          {sub && (
+            <div
+              className="text-[11px] leading-tight"
+              style={{ color: getVar("--text-sub") }}
+            >
+              {sub}
+            </div>
+          )}
+        </div>
+      );
     }
 
-    function getVar(name) {
-      return getComputedStyle(document.documentElement).getPropertyValue(name);
+    function prettyDate(s) {
+      try {
+        if (!s) return "";
+        const d = new Date(s);
+        return d.toLocaleString();
+      } catch {
+        return s;
+      }
     }
 
-    // -- logique app
+    // config (apiBase, apiKey) stockée dans localStorage
     function useConfig() {
       const [apiBase, setApiBase] = useState("https://foodgoov.onrender.com");
       const [apiKey, setApiKey] = useState("");
@@ -311,27 +291,26 @@
       return { apiBase, setApiBase, apiKey, setApiKey };
     }
 
-    function prettyDate(s) {
-      try {
-        if (!s) return "";
-        const d = new Date(s);
-        return d.toLocaleString();
-      } catch {
-        return s;
-      }
-    }
-
     function App() {
       const { apiBase, setApiBase, apiKey, setApiKey } = useConfig();
       const { theme, toggle } = useTheme();
 
+      // état global
       const [statusMsg, setStatusMsg] = useState("");
       const [statusOK, setStatusOK] = useState(null); // true/false/null
       const [loading, setLoading] = useState(false);
 
       const [tokens, setTokens] = useState([]);
-      const [limit, setLimit] = useState(25);
+      const [limit, setLimit] = useState(100);
       const [offset, setOffset] = useState(0);
+
+      // analytics dérivés des tokens
+      const [stats, setStats] = useState({
+        totalTokens: 0,
+        totalVolume: 0,
+        distinctDomains: 0,
+        byCategory: {},
+      });
 
       const [mintBody, setMintBody] = useState(() =>
         JSON.stringify(
@@ -355,6 +334,52 @@
       );
       const [mintResult, setMintResult] = useState(null);
 
+      // à chaque changement de tokens, recalculer les stats
+      useEffect(() => {
+        const s = computeStats(tokens);
+        setStats(s);
+      }, [tokens]);
+
+      function computeStats(items) {
+        // total tokens
+        const totalTokens = items.length;
+
+        // total volume : sum(quantity.count) si présent
+        let totalVolume = 0;
+        // distinct domain_id
+        const domainSet = new Set();
+        // by category
+        const categoryMap = {};
+
+        for (const t of items) {
+          // volume
+          // dans l'API list_tokens on remet quantity comme {unit,count}
+          if (t.quantity && typeof t.quantity.count === "number") {
+            totalVolume += t.quantity.count;
+          }
+
+          // domain
+          if (t.domain_id) {
+            domainSet.add(t.domain_id);
+          }
+
+          // category
+          if (t.category) {
+            categoryMap[t.category] = (categoryMap[t.category] || 0) + 1;
+          }
+        }
+
+        const distinctDomains = domainSet.size;
+
+        return {
+          totalTokens,
+          totalVolume,
+          distinctDomains,
+          byCategory: categoryMap,
+        };
+      }
+
+      // test API santé
       async function testAPI() {
         setStatusMsg("Test en cours…");
         setStatusOK(null);
@@ -369,6 +394,7 @@
         }
       }
 
+      // charge les tokens
       async function loadTokens() {
         setLoading(true);
         try {
@@ -387,6 +413,7 @@
           setStatusMsg(`Chargé (${j.items?.length || 0})`);
           setStatusOK(true);
         } catch (err) {
+          setTokens([]);
           setStatusMsg("Erreur chargement tokens");
           setStatusOK(false);
         } finally {
@@ -394,6 +421,7 @@
         }
       }
 
+      // créer un token
       async function mintToken() {
         setLoading(true);
         setMintResult(null);
@@ -420,7 +448,7 @@
         }
       }
 
-      // -- définir les variables CSS du thème actif
+      // appliquer couleurs selon theme
       useEffect(() => {
         if (theme === "dark") {
           document.documentElement.style.setProperty("--panel-bg", "#1f2937");
@@ -441,10 +469,9 @@
 
       return (
         <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-8">
-          {/* HEADER / BRAND BAR */}
+          {/* HEADER */}
           <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div className="flex items-start md:items-center gap-3">
-              {/* Logo simple: rond vert + texte */}
               <div className="flex items-center justify-center w-10 h-10 rounded-full bg-brand text-white font-semibold text-sm shadow-lg">
                 FG
               </div>
@@ -465,7 +492,7 @@
             </div>
 
             <div className="flex flex-col items-start md:items-end gap-2 text-sm">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 {statusOK === null ? (
                   <Badge ok={true}>Idle</Badge>
                 ) : statusOK === true ? (
@@ -489,7 +516,7 @@
             </div>
           </header>
 
-          {/* CONFIG BAR */}
+          {/* CONFIG */}
           <Card>
             <div className="grid md:grid-cols-3 gap-6 items-end">
               <Field label="API Base URL">
@@ -519,6 +546,74 @@
               </div>
             </div>
           </Card>
+
+          {/* ANALYTICS SECTION */}
+          <div className="grid md:grid-cols-4 gap-4">
+            <Card>
+              <InfoStat
+                label="Tokens mintés"
+                value={stats.totalTokens}
+                sub="Total enregistré"
+              />
+            </Card>
+
+            <Card>
+              <InfoStat
+                label="Volume total"
+                value={stats.totalVolume}
+                sub="Total quantité (ex: bouteilles)"
+              />
+            </Card>
+
+            <Card>
+              <InfoStat
+                label="Domaines"
+                value={stats.distinctDomains}
+                sub="Producteurs uniques"
+              />
+            </Card>
+
+            <Card>
+              <div className="flex flex-col min-w-[120px]">
+                <div
+                  className="text-xs uppercase font-medium tracking-wide mb-1"
+                  style={{ color: getVar("--text-sub") }}
+                >
+                  Par catégorie
+                </div>
+                <div
+                  className="text-sm leading-tight space-y-1"
+                  style={{ color: getVar("--text-main") }}
+                >
+                  {Object.keys(stats.byCategory).length === 0 && (
+                    <div
+                      className="text-[11px]"
+                      style={{ color: getVar("--text-sub") }}
+                    >
+                      —
+                    </div>
+                  )}
+
+                  {Object.entries(stats.byCategory).map(
+                    ([cat, nb]) => (
+                      <div
+                        key={cat}
+                        className="flex items-center gap-2"
+                      >
+                        <span className="inline-flex items-center justify-center w-2 h-2 rounded-full bg-brand"></span>
+                        <span className="text-xs font-medium">
+                          {cat} :
+                        </span>
+                        <span className="text-xs text-[color:var(--text-sub)]">
+                          {nb}
+                        </span>
+                      </div>
+                    )
+                  )}
+                </div>
+              </div>
+            </Card>
+          </div>
 
           {/* MAIN GRID */}
           <div className="grid md:grid-cols-3 gap-8">
@@ -659,26 +754,72 @@
               </h2>
 
               <div className="space-y-4 text-sm">
-                <InfoRow
-                  label="API publique"
-                  value="GET /v1/anchors/latest"
-                />
-                <InfoRow
-                  label="Lister tokens (privé)"
-                  value="GET /v1/admin/tokens  (x-api-key)"
-                />
-                <InfoRow
-                  label="Créer token (privé)"
-                  value="POST /v1/tokens  (JSON + x-api-key)"
-                />
-                <InfoRow
-                  label="Sécurité"
-                  value="La clé API ne quitte jamais ton navigateur"
-                />
-                <InfoRow
-                  label="LocalStorage"
-                  value="URL + clé gardées en local"
-                />
+                <div>
+                  <div
+                    className="text-xs font-medium uppercase tracking-wide mb-1"
+                    style={{ color: getVar("--text-sub") }}
+                  >
+                    API publique
+                  </div>
+                  <div
+                    className="text-sm font-mono"
+                    style={{ color: getVar("--text-main") }}
+                  >
+                    GET /v1/anchors/latest
+                  </div>
+                </div>
+
+                <div>
+                  <div
+                    className="text-xs font-medium uppercase tracking-wide mb-1"
+                    style={{ color: getVar("--text-sub") }}
+                  >
+                    Liste admin
+                  </div>
+                  <div
+                    className="text-sm font-mono"
+                    style={{ color: getVar("--text-main") }}
+                  >
+                    GET /v1/admin/tokens (x-api-key)
+                  </div>
+                </div>
+
+                <div>
+                  <div
+                    className="text-xs font-medium uppercase tracking-wide mb-1"
+                    style={{ color: getVar("--text-sub") }}
+                  >
+                    Mint
+                  </div>
+                  <div
+                    className="text-sm font-mono"
+                    style={{ color: getVar("--text-main") }}
+                  >
+                    POST /v1/tokens
+                  </div>
+                  <div
+                    className="text-[11px]"
+                    style={{ color: getVar("--text-sub") }}
+                  >
+                    Body JSON + header x-api-key
+                  </div>
+                </div>
+
+                <div>
+                  <div
+                    className="text-xs font-medium uppercase tracking-wide mb-1"
+                    style={{ color: getVar("--text-sub") }}
+                  >
+                    Sécurité
+                  </div>
+                  <div
+                    className="text-[11px] leading-tight"
+                    style={{ color: getVar("--text-sub") }}
+                  >
+                    La clé API reste dans ton navigateur.
+                    Elle n'est jamais envoyée à un service tiers.
+                  </div>
+                </div>
               </div>
 
               <div className="mt-6">
@@ -697,7 +838,8 @@
                   className="text-[11px] mt-3 leading-relaxed"
                   style={{ color: getVar("--text-sub") }}
                 >
-                  Le mode choisi est mémorisé sur cet appareil.
+                  Le thème, l'URL API et la clé API sont mémorisés localement
+                  sur cet appareil (localStorage).
                 </div>
               </div>
             </Card>
