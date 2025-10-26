@@ -7,91 +7,157 @@
   <meta name="description" content="Vérification authentique d'un lot via FoodGoov" />
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <script>
-    // petit helper pour formatter la date
-    function prettyDate(s) {
-      try {
-        if (!s) return "";
-        const d = new Date(s);
-        return d.toLocaleString();
-      } catch {
-        return s;
-      }
+<script>
+  function prettyDate(s) {
+    try {
+      if (!s) return "";
+      const d = new Date(s);
+      return d.toLocaleString();
+    } catch {
+      return s;
+    }
+  }
+
+  async function main() {
+    const statusEl = document.getElementById("status");
+    const detailsEl = document.getElementById("details");
+    const metaEl = document.getElementById("meta");
+    const tokenIdEl = document.getElementById("tokenId");
+    const warnEl = document.getElementById("warn");
+
+    const params = new URLSearchParams(window.location.search);
+    const tokenId = params.get("token_id");
+
+    if (!tokenId) {
+      statusEl.innerText = "Aucun token fourni.";
+      warnEl.classList.remove("hidden");
+      warnEl.innerText =
+        "Ajoutez ?token_id=0x.... dans l'URL pour vérifier un lot.";
+      return;
     }
 
-    async function main() {
-      const statusEl = document.getElementById("status");
-      const detailsEl = document.getElementById("details");
-      const metaEl = document.getElementById("meta");
-      const tokenIdEl = document.getElementById("tokenId");
-      const warnEl = document.getElementById("warn");
+    tokenIdEl.innerText = tokenId;
 
-      // 1. Récupère ?token_id=... dans l'URL
-      const params = new URLSearchParams(window.location.search);
-      const tokenId = params.get("token_id");
+    const apiBase = "https://foodgoov.onrender.com";
 
-      if (!tokenId) {
-        statusEl.innerText = "Aucun token fourni.";
-        warnEl.classList.remove("hidden");
-        warnEl.innerText = "Ajoutez ?token_id=... dans l'URL.";
-        return;
-      }
+    let payload = null;
+    let ok = false;
+    try {
+      const r = await fetch(
+        `${apiBase}/v1/tokens/${encodeURIComponent(tokenId)}`
+      );
+      payload = await r.json();
+      ok = r.ok;
+    } catch (err) {
+      ok = false;
+      payload = { error: String(err.message || err) };
+    }
 
-      tokenIdEl.innerText = tokenId;
+    if (!ok) {
+      statusEl.innerText = "❌ Lot inconnu / non trouvé";
+      statusEl.classList.add("text-red-600");
+      warnEl.classList.remove("hidden");
+      warnEl.innerText =
+        "Ce code ne correspond pas à un lot validé dans FoodGoov.";
+      return;
+    }
 
-      // 2. Appelle l'API publique /v1/tokens/{token_id}
-      // IMPORTANT : c'est une route publique chez toi → pas besoin de x-api-key
-      const apiBase = "https://foodgoov.onrender.com";
+    statusEl.innerText = "✅ Lot authentifié";
+    statusEl.classList.add("text-emerald-600");
 
-      let data = null;
-      let ok = false;
-      try {
-        const r = await fetch(`${apiBase}/v1/tokens/${encodeURIComponent(tokenId)}`);
-        data = await r.json();
-        ok = r.ok;
-      } catch (err) {
-        ok = false;
-        data = { error: String(err.message || err) };
-      }
+    const t = payload.token || {};
+    const evs = payload.events || [];
 
-      if (!ok) {
-        // Token inconnu
-        statusEl.innerText = "❌ Lot inconnu / non trouvé";
-        statusEl.classList.add("text-red-600");
-        warnEl.classList.remove("hidden");
-        warnEl.innerText =
-          "Ce code ne correspond pas à un lot validé dans FoodGoov. " +
-          "Veuillez contacter le producteur ou l'importateur.";
-        return;
-      }
-
-      // 3. Ici tu peux enrichir avec plus d'infos si tu modifies le backend
-      // Pour l'instant, notre backend renvoie juste { token_id: "0x..." }
-      // Donc on va afficher ce qu'on sait, mais on prévoit la suite.
-
-      statusEl.innerText = "✅ Lot authentifié";
-      statusEl.classList.add("text-emerald-600");
-
-      // On met dans 'details' les infos disponibles.
-      // Plus tard on inclura category, domain_id, vintage_year, batch_code...
-      // Pour ça il faudra que /v1/tokens/{token_id} renvoie plus de colonnes.
-      detailsEl.innerHTML = `
-        <div class="text-sm text-gray-600">
-          <div class="font-medium text-gray-900 text-base mb-2">
-            Identifiant du lot (token):
+    detailsEl.innerHTML = `
+      <div class="grid grid-cols-1 gap-4 text-sm text-gray-700">
+        <div>
+          <div class="text-xs font-medium uppercase tracking-wide text-gray-500 mb-1">
+            Produit
           </div>
-          <div class="font-mono break-all text-xs bg-gray-100 rounded-lg px-3 py-2 text-gray-800">
-            ${data.token_id || "(non fourni)"}
+          <div class="text-gray-900 font-semibold">
+            ${t.category || "—"}
+          </div>
+          <div class="text-[11px] text-gray-500">
+            Domaine / Producteur : ${t.domain_id || t.producer_id || "—"}
           </div>
         </div>
-      `;
 
-      // métadonnées basiques
-      metaEl.innerText = "Vérifié via FoodGoov • " + prettyDate(new Date().toISOString());
-    }
+        <div>
+          <div class="text-xs font-medium uppercase tracking-wide text-gray-500 mb-1">
+            Millésime / Lot
+          </div>
+          <div class="text-gray-900 font-semibold">
+            ${t.vintage_year || "—"} • ${t.batch_code || "—"}
+          </div>
+        </div>
 
-    window.addEventListener("DOMContentLoaded", main);
-  </script>
+        <div>
+          <div class="text-xs font-medium uppercase tracking-wide text-gray-500 mb-1">
+            Volume déclaré
+          </div>
+          <div class="text-gray-900 font-semibold">
+            ${
+              t.quantity && t.quantity.count
+                ? t.quantity.count
+                : "—"
+            }
+            ${
+              t.quantity && t.quantity.unit
+                ? t.quantity.unit
+                : ""
+            }
+          </div>
+        </div>
+
+        <div>
+          <div class="text-xs font-medium uppercase tracking-wide text-gray-500 mb-1">
+            Déclaré par
+          </div>
+          <div class="text-gray-900 font-semibold">
+            ${t.issuer || "—"}
+          </div>
+          <div class="text-[11px] text-gray-500">
+            ${t.producer_id || ""}
+          </div>
+        </div>
+
+        <div>
+          <div class="text-xs font-medium uppercase tracking-wide text-gray-500 mb-1">
+            Date d'enregistrement
+          </div>
+          <div class="text-gray-900 font-semibold">
+            ${prettyDate(t.issued_at)}
+          </div>
+        </div>
+      </div>
+
+      <div class="border-t border-gray-200 pt-4">
+        <div class="text-xs font-medium uppercase tracking-wide text-gray-500 mb-2">
+          Historique
+        </div>
+        ${
+          evs.length === 0
+            ? `<div class="text-[11px] text-gray-500">Aucun événement enregistré.</div>`
+            : evs
+                .map(
+                  (e) => `
+            <div class="text-[11px] leading-relaxed text-gray-700 mb-2">
+              <span class="font-semibold text-gray-900">${e.type}</span>
+              — ${prettyDate(e.created_at)}
+            </div>`
+                )
+                .join("")
+        }
+      </div>
+    `;
+
+    metaEl.innerText =
+      "Vérifié via FoodGoov • " + prettyDate(new Date().toISOString());
+  }
+
+  window.addEventListener("DOMContentLoaded", main);
+</script>
+
 </head>
 
 <body class="min-h-screen bg-gray-50 text-gray-900 flex items-center justify-center p-6">
