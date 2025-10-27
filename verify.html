@@ -154,6 +154,37 @@
     metaEl.innerText =
       "Vérifié via FoodGoov • " + prettyDate(new Date().toISOString());
   }
+  async function shareToken() {
+    const params = new URLSearchParams(window.location.search);
+    const tokenId = params.get("token_id");
+
+    if (!tokenId) {
+      alert("Aucun token à partager.");
+      return;
+    }
+
+    const shareUrl = `${window.location.origin}${window.location.pathname}?token_id=${encodeURIComponent(tokenId)}`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "Vérification du lot FoodGoov",
+          text: "Voici la fiche d'authenticité du lot.",
+          url: shareUrl,
+        });
+        return;
+      } catch (err) {
+        console.log("Partage annulé ou erreur:", err);
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      alert("Lien copié 👍\n" + shareUrl);
+    } catch (err) {
+      alert("Lien du lot :\n" + shareUrl);
+    }
+  }
 
   window.addEventListener("DOMContentLoaded", main);
 </script>
