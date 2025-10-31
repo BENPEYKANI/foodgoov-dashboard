@@ -4,39 +4,43 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>FoodGoov — Dashboard</title>
-<!-- Tailwind full CDN with plugins -->
-<script src="https://cdn.tailwindcss.com/3.4.3"></script>
+<!-- Tailwind CDN avec plugins -->
 <script>
-  tailwind.config = {
-    theme: {
-      extend: {},
-    },
-    plugins: [tailwindcss.forms, tailwindcss.typography],
+  /* La configuration DOIT être avant le script CDN */
+  tailwind = {
+    config: {
+      darkMode: 'class',
+      theme: { extend: {} }
+    }
   };
 </script>
+<script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+
+<!-- Polices et style de base -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
 <style>
-  body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background-color: #f9fafb; }
+  body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:#f9fafb; }
   input, textarea, button { outline: none; }
 </style>
-<link href="https://cdn.jsdelivr.net/npm/@tailwindcss/forms@0.5.7/dist/forms.min.css" rel="stylesheet">
-<link href="https://cdn.jsdelivr.net/npm/@tailwindcss/typography@0.5.10/dist/typography.min.css" rel="stylesheet">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-  <style>
-    html,body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto}
-    .btn{ @apply px-4 py-2 rounded-xl text-sm font-semibold shadow hover:shadow-md transition;}
-    .btn-primary{ @apply bg-black text-white;}
-    .btn-muted{ @apply bg-gray-100;}
-    .card{ @apply rounded-2xl border border-gray-200 p-4 bg-white;}
-    .field{ @apply w-full border border-gray-300 rounded-xl px-3 py-2 text-sm;}
-    .label{ @apply text-xs font-medium text-gray-600;}
-    .tag{ @apply text-[11px] px-2 py-0.5 rounded-full bg-gray-100;}
-    .link{ @apply text-blue-600 hover:underline;}
-  </style>
-  <style>
-  body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-  input, textarea, button { outline: none; }
+
+<!-- Petits styles personnalisés (remplace ton ancien @apply) -->
+<style>
+  .btn {
+    padding: .5rem 1rem; border-radius: .75rem; font-size: .875rem; font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0,0,0,.08); transition: all .2s ease;
+  }
+  .btn-primary { background: #111827; color: #fff; }
+  .btn-primary:hover { opacity: .92; }
+  .btn-muted { background: #f3f4f6; }
+  .card { border-radius: 1rem; border: 1px solid #e5e7eb; padding: 1rem; background: #fff; }
+  .field { border: 1px solid #d1d5db; border-radius: .75rem; padding: .5rem .75rem; background: #fff; }
+  .label { font-size: .75rem; font-weight: 500; color: #6b7280; }
+  .tag { font-size: 11px; padding: .125rem .5rem; border-radius: 9999px; background: #f3f4f6; }
+  .link { color: #2563eb; } 
+  .link:hover { text-decoration: underline; }
 </style>
 </head>
 <body class="bg-gray-50">
