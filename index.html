@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>FoodGoov — Dashboard</title>
-  <script defer src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio,line-clamp"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -19,6 +19,10 @@
     .tag{ @apply text-[11px] px-2 py-0.5 rounded-full bg-gray-100;}
     .link{ @apply text-blue-600 hover:underline;}
   </style>
+  <style>
+  body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  input, textarea, button { outline: none; }
+</style>
 </head>
 <body class="bg-gray-50">
   <div class="max-w-6xl mx-auto p-4 md:p-6">
