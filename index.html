@@ -232,7 +232,7 @@ function buildVerifyUrl(tokenId) {
 /* ====== QR Code & partage ====== */
 async function showQR(tokenId) {
   try {
-    const url = buildVerifyUrl(tokenId);
+const url = data.qr_url || buildVerifyUrl(tokenId);
 
     // Affiche la carte
     qrSection?.classList.remove('hidden');
