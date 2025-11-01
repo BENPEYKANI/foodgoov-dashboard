@@ -196,106 +196,147 @@
     FoodGoov garantit l’unicité cryptographique du lot et sa déclaration par le producteur / émetteur enregistré.
   </footer>
   <script>
-  // Petits utilitaires
-  const $ = (sel) => document.querySelector(sel);
-  const byId = (id) => document.getElementById(id);
+/* ====== Sélecteurs & état ====== */
+const apiInput    = document.getElementById('apiBase');      // champ API Base URL
+const mintTA      = document.getElementById('mintBody');     // textarea JSON du mint
+const mintResult  = document.getElementById('mintResult');   // petit texte sous le bouton Mint
+const qrSection   = document.getElementById('qrSection');    // conteneur de la carte QR
+const qrCanvas    = document.getElementById('qrCanvas');     // <canvas> pour le QR
+const shareBtn    = document.getElementById('shareBtn');     // bouton Partager
+const shareLinkEl = document.getElementById('shareLink');    // <p> lien partage
+const sessionBadge = document.getElementById('sessionBadge'); // petit affichage de session (optionnel)
 
-  // Récupère l'URL de base API depuis l’input
-  function apiBase() {
-    return (byId('apiBase')?.value || '').replace(/\/+$/, '');
+function getBaseUrl() {
+  const v = (apiInput?.value || '').trim();
+  return v.replace(/\/+$/,''); // sans "/" final
+}
+
+/* Persistance légère */
+function saveLocals() {
+  localStorage.setItem('fg.api', apiInput.value || '');
+}
+function loadLocals() {
+  const api = localStorage.getItem('fg.api');
+  if (api && apiInput) apiInput.value = api;
+}
+loadLocals();
+apiInput?.addEventListener('change', saveLocals);
+
+/* ====== Aide: construction du lien de vérif ====== */
+function buildVerifyUrl(tokenId) {
+  // URL publique de ta page verify.html (static)
+  const verifyBase = 'https://foodgoov-dashboard.onrender.com/verify.html';
+  return `${verifyBase}?token_id=${encodeURIComponent(tokenId)}`;
+}
+
+/* ====== QR Code & partage ====== */
+async function showQR(tokenId) {
+  try {
+    const url = buildVerifyUrl(tokenId);
+
+    // Affiche la carte
+    qrSection?.classList.remove('hidden');
+
+    // Dessine le QR dans le canvas (lib qrcode.min.js chargée en <head>)
+    await QRCode.toCanvas(qrCanvas, url, { width: 240, margin: 1 });
+
+    // Met le lien cliquable en texte
+    if (shareLinkEl) shareLinkEl.textContent = url;
+    shareBtn?.removeAttribute('disabled');
+    shareBtn?.classList.remove('opacity-50');
+  } catch (e) {
+    console.error(e);
+    if (mintResult) mintResult.textContent = "❌ Erreur génération du QR";
   }
+}
 
-  // Lit le JSON du formulaire "Mint (authentifié)"
-  function readMintBody() {
-    // Essaie d'abord un textarea avec id= mintBody (si tu l'as)
-    const t1 = byId('mintBody');
-    if (t1) return t1.value;
-
-    // Sinon, prend le premier textarea du bloc "Mint (authentifié)"
-    // (le conteneur du card contient le bouton "Mint token")
-    const t2 = $('button[onclick^="mintToken"]')?.closest('section,div,form')?.querySelector('textarea');
-    return t2 ? t2.value : '';
-  }
-
-  // Affiche la section QR (URL + QRCode)
-  async function showQR(url) {
-    const canvas = byId('qrCanvas');
-    const linkP  = byId('shareLink');
-    const box    = byId('qrSection');
-
-    linkP.textContent = url;
-    linkP.dataset.href = url; // on garde l'URL pour copyShareLink()
-
-    // Utilise la lib QRCode (déjà chargée en <head>)
-    // https://github.com/soldair/node-qrcode#browser
-    await QRCode.toCanvas(canvas, url, { width: 220, margin: 1 });
-
-    box?.classList.remove('hidden');
-  }
-
-  // Bouton “Copier” / partager
-  async function copyShareLink() {
-    const url = byId('shareLink')?.dataset.href;
-    if (!url) return;
-    try {
-      await navigator.clipboard.writeText(url);
-      byId('shareBtn').textContent = 'Lien copié ✅';
-      setTimeout(() => (byId('shareBtn').textContent = 'Copier'), 1500);
-    } catch (e) {
-      alert('Impossible de copier le lien.'); 
+async function copyShareLink() {
+  const txt = shareLinkEl?.textContent || '';
+  if (!txt) return;
+  try {
+    await navigator.clipboard.writeText(txt);
+    if (navigator.share) {
+      // Essaye le partage natif si dispo
+      await navigator.share({ title: 'Vérification du lot • FoodGoov', url: txt });
     }
+    shareBtn.textContent = "Copié / Partagé";
+    setTimeout(() => (shareBtn.textContent = "Copier"), 1200);
+  } catch {
+    shareBtn.textContent = "Copié";
+    setTimeout(() => (shareBtn.textContent = "Copier"), 1200);
   }
-  window.copyShareLink = copyShareLink; // pour l’attribut onclick
+}
 
-  // === Mint (authentifié) ===
-  async function mintToken() {
-    const out = byId('mintResult');
-    out.textContent = 'Envoi…';
+/* ====== Mint (authentifié via x-session) ====== */
+/* Hypothèse: tu as déjà une session côté navigateur (stockée après /v1/auth/login)
+   sous la clé 'fgsess'. Si tu utilises un autre nom, adapte ci-dessous. */
+function getSessionToken() {
+  return localStorage.getItem('fgsess') || '';
+}
 
-    // Corps JSON saisi par l’utilisateur
-    const bodyRaw = readMintBody();
-    let body;
-    try {
-      body = JSON.parse(bodyRaw);
-    } catch (e) {
-      out.textContent = 'JSON invalide dans le formulaire.';
-      return;
-    }
+async function mintToken() {
+  const base = getBaseUrl();
+  const sess = getSessionToken();
+  qrSection?.classList.add('hidden');  // cache l’ancienne carte QR
 
-    // Clé API (tu peux l’avoir stockée après login ; sinon à adapter à ton flux)
-    const xApiKey = localStorage.getItem('fg_api_key');
-    if (!xApiKey) {
-      out.textContent = 'Pas de clé API. Connecte-toi ou renseigne fg_api_key dans localStorage.';
-      return;
-    }
-
-    try {
-      const res = await fetch(`${apiBase()}/v1/tokens`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': xApiKey,
-        },
-        body: JSON.stringify(body),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        out.textContent = `Erreur ${res.status} — ${data?.detail || JSON.stringify(data)}`;
-        return;
-      }
-
-      // Réponse attendue: { token_id: "...", qr_url: "https://…/verify.html?token_id=…" }
-      out.textContent = `✅ Créé: ${data.token_id}`;
-      if (data.qr_url) {
-        await showQR(data.qr_url);
-      }
-    } catch (e) {
-      out.textContent = 'Erreur réseau : ' + e.message;
-    }
+  if (!base) {
+    mintResult.textContent = "❌ Mets d’abord ton API Base URL";
+    return;
   }
-  window.mintToken = mintToken; // pour l’attribut onclick
+  if (!sess) {
+    mintResult.textContent = "❌ Connecte-toi d’abord (session requise)";
+    return;
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(mintTA.value);
+  } catch {
+    mintResult.textContent = "❌ JSON invalide dans le formulaire Mint";
+    return;
+  }
+
+  mintResult.textContent = "⏳ Mint en cours…";
+
+  try {
+    const res = await fetch(`${base}/v1/tokens`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-session': sess
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    // backend renvoie { token_id, qr_url } – on utilise token_id pour faire notre propre QR
+    const tokenId = data.token_id || data.token?.token_id;
+    mintResult.textContent = `✅ Mint OK • token_id: ${tokenId?.slice(0,10)}…`;
+
+    if (tokenId) await showQR(tokenId);
+  } catch (e) {
+    console.error(e);
+    mintResult.textContent = `❌ Échec du mint: ${e.message || e}`;
+  }
+}
+
+/* ====== Initialise les boutons ====== */
+function wireUI() {
+  document.getElementById('shareBtn')?.setAttribute('disabled','true');
+  document.getElementById('shareBtn')?.classList.add('opacity-50');
+
+  // Affichage court de la session si présent
+  const s = getSessionToken();
+  if (sessionBadge) {
+    sessionBadge.textContent = s ? `…${s.slice(-6)}` : '—';
+  }
+}
+document.addEventListener('DOMContentLoaded', wireUI);
 </script>
 </body>
 </html>
