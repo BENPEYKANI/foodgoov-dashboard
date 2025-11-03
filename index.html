@@ -203,102 +203,255 @@
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 
 <script>
-/* --------------------------
-   Fonctions utilitaires
----------------------------*/
+// ---------- Utilitaires ----------
+const $ = (sel) => document.querySelector(sel);
+const apiInput = $('#apiBase');        // champ "API Base URL"
+const sessionEl = $('#session');       // div/zone qui affiche la session
+const mintBodyEl = $('#mintBody');     // textarea JSON pour le mint
 
-// Crée le lien de vérification complet pour un token
-function buildVerifyUrl(tokenId) {
-  const base = `${window.location.origin}/verify.html`;
-  return `${base}?token_id=${encodeURIComponent(tokenId)}`;
+const qrSection = $('#qrSection');
+const qrCanvas  = $('#qrCanvas');
+const shareBtn  = $('#shareBtn');
+const shareLink = $('#shareLink');
+
+function baseURL() {
+  // Valeur depuis l'input, sinon défaut:
+  const v = (apiInput?.value || '').trim();
+  return v || 'https://foodgoov.onrender.com';
 }
 
-// Génère le QR code et affiche le lien
-function renderQR(tokenId) {
-  const url = buildVerifyUrl(tokenId);
-  const canvas = document.getElementById('qrCanvas');
-  QRCode.toCanvas(canvas, url, { width: 220 }, (err) => {
-    if (err) console.error('Erreur QR:', err);
-  });
-
-  // Affiche la section QR
-  document.getElementById('qrSection').classList.remove('hidden');
-  document.getElementById('shareLink').textContent = url;
-
-  // Sauvegarde du lien pour le bouton Copier
-  window._fgLastShareUrl = url;
+function toast(msg) {
+  const el = document.createElement('div');
+  el.textContent = msg;
+  el.className = 'fixed bottom-3 left-1/2 -translate-x-1/2 bg-black text-white text-sm px-3 py-2 rounded shadow';
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2500);
 }
 
-// Copie le lien de partage
-function copyShareLink() {
-  const url = window._fgLastShareUrl;
-  if (!url) return;
-  navigator.clipboard.writeText(url).then(() => {
-    const btn = document.getElementById('shareBtn');
-    const old = btn.textContent;
-    btn.textContent = 'Copié ✔';
-    setTimeout(() => (btn.textContent = old), 1200);
-  });
+// Session Token stocké localement
+const SESS_KEY = 'fgsess';
+function setSession(token) {
+  if (token) localStorage.setItem(SESS_KEY, token);
+  else localStorage.removeItem(SESS_KEY);
+  renderSession();
+}
+function getSession() {
+  return localStorage.getItem(SESS_KEY) || '';
+}
+function renderSession() {
+  const s = getSession();
+  sessionEl && (sessionEl.textContent = s ? s.slice(0,24)+'…' : '—');
 }
 
-/* --------------------------
-   Fonction principale : MINT
----------------------------*/
-
-async function mintToken() {
-  const resultEl = document.getElementById('mintResult');
-  resultEl.textContent = '⏳ Envoi en cours...';
-
-  // Lecture du JSON saisi dans la zone de texte
-  const raw = document.getElementById('mintJson').value || document.getElementById('mintJson').textContent;
-  let body;
+// ---------- Auth : signup + login ----------
+async function signup() {
   try {
-    body = JSON.parse(raw);
-  } catch (e) {
-    resultEl.textContent = '⚠️ JSON invalide.';
-    return;
-  }
+    const display  = $('#signupDisplay')?.value?.trim();
+    const email    = $('#signupEmail')?.value?.trim();
+    const password = $('#signupPassword')?.value;
 
-  // Récupération de l’URL API et de la session
-  const baseUrl = document.getElementById('baseUrl').value.trim().replace(/\/$/, '');
-  const session = (window.localStorage.getItem('fg_session') || '').trim();
-  if (!session) {
-    resultEl.textContent = '⚠️ Vous devez être connecté avant de minter.';
-    return;
-  }
+    if (!display || !email || !password) {
+      toast('⚠️ Nom, email et mot de passe requis.');
+      return;
+    }
 
-  try {
-    const res = await fetch(`${baseUrl}/v1/tokens`, {
+    const res = await fetch(`${baseURL()}/v1/auth/signup`, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-session': session, // header d’authentification
-      },
-      body: JSON.stringify(body),
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ display_name: display, email, password })
     });
 
     const data = await res.json();
     if (!res.ok) {
-      resultEl.textContent = `❌ Erreur : ${data?.detail || 'échec du mint'}`;
+      console.warn('Signup error:', data);
+      toast(data.detail || '❌ Échec création de compte');
       return;
     }
 
-    // Succès : afficher token_id + QR
-    const tokenId = data.token_id || data?.token?.token_id;
-    if (tokenId) {
-      resultEl.textContent = `✅ Mint réussi ! Token ID : ${tokenId}`;
-      renderQR(tokenId); // Génère le QR Code
-    } else {
-      resultEl.textContent = '⚠️ Réponse inattendue du serveur.';
-    }
-
-    // (optionnel) Rafraîchit la liste des tokens
-    if (typeof loadMyTokens === 'function') loadMyTokens();
-  } catch (err) {
-    console.error(err);
-    resultEl.textContent = '❌ Erreur réseau.';
+    // data = { producer_id, api_key, session_token, display_name }
+    setSession(data.session_token);
+    toast('✅ Compte créé & connecté');
+  } catch (e) {
+    console.error(e);
+    toast('❌ Erreur réseau (signup)');
   }
 }
+
+async function login() {
+  try {
+    const email    = $('#loginEmail')?.value?.trim();
+    const password = $('#loginPassword')?.value;
+
+    if (!email || !password) {
+      toast('⚠️ Email & mot de passe requis.');
+      return;
+    }
+
+    const res = await fetch(`${baseURL()}/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      console.warn('Login error:', data);
+      toast(data.detail || '❌ Identifiants invalides');
+      return;
+    }
+
+    // data = { producer_id, api_key, session_token, display_name }
+    setSession(data.session_token);
+    toast('✅ Connecté');
+  } catch (e) {
+    console.error(e);
+    toast('❌ Erreur réseau (login)');
+  }
+}
+
+function logout() {
+  setSession('');
+  toast('↪︎ Déconnecté');
+}
+
+// ---------- Liste "Mes tokens" ----------
+async function loadMyTokens() {
+  try {
+    const limit  = parseInt($('#listLimit')?.value || '25', 10);
+    const offset = parseInt($('#listOffset')?.value || '0', 10);
+    const sess   = getSession();
+    if (!sess) {
+      toast('⚠️ Connecte-toi pour charger tes tokens.');
+      return;
+    }
+
+    const res = await fetch(`${baseURL()}/v1/admin/my-tokens?limit=${limit}&offset=${offset}`, {
+      headers: { 'x-session': sess }
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      console.warn('loadMyTokens error:', data);
+      toast(data.detail || '❌ Chargement impossible');
+      return;
+    }
+
+    // data = { items: [...] }
+    const zone = $('#myTokensZone');
+    if (zone) {
+      zone.innerHTML = '';
+      data.items.forEach(item => {
+        const a = document.createElement('a');
+        a.href   = `/verify.html?token_id=${encodeURIComponent(item.token_id)}`;
+        a.target = '_blank';
+        a.className = 'block text-sm text-blue-600 hover:underline';
+        a.textContent = `${item.domain_id} • ${item.vintage_year} • ${item.batch_code} • ${item.category}`;
+        zone.appendChild(a);
+      });
+      if (!data.items.length) {
+        zone.textContent = '—';
+      }
+    }
+    toast('✅ Tokens chargés');
+  } catch (e) {
+    console.error(e);
+    toast('❌ Erreur réseau (mes tokens)');
+  }
+}
+
+// ---------- Mint ----------
+async function mintToken() {
+  try {
+    const sess = getSession();
+    if (!sess) {
+      toast('⚠️ Connecte-toi avant de minter.');
+      return;
+    }
+    let body;
+    try {
+      body = JSON.parse(mintBodyEl.value);
+    } catch {
+      toast('⚠️ JSON invalide dans la zone Mint.');
+      return;
+    }
+
+    const res = await fetch(`${baseURL()}/v1/tokens`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-session': sess
+      },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      console.warn('mint error:', data);
+      toast(data.detail || '❌ Mint refusé');
+      return;
+    }
+
+    const tokenId = data.token_id || data?.token?.token_id || '';
+    $('#mintResult').textContent = `✅ Mint réussi ! Token ID : ${tokenId}`;
+    renderQR(tokenId);
+  } catch (e) {
+    console.error(e);
+    toast('❌ Erreur réseau (mint)');
+  }
+}
+
+// ---------- QR + Partage ----------
+function renderQR(tokenId) {
+  try {
+    if (!tokenId) {
+      qrSection?.classList.add('hidden');
+      return;
+    }
+    const verifyURL = `${location.origin}/verify.html?token_id=${encodeURIComponent(tokenId)}`;
+
+    // lib QRCode (cdn.jsdelivr) doit être chargée en <head>
+    const ctx = qrCanvas.getContext('2d');
+    ctx.clearRect(0, 0, qrCanvas.width, qrCanvas.height);
+
+    // Génère un QR dans le canvas
+    // @ts-ignore (la lib crée QRCode sur window)
+    QRCode.toCanvas(qrCanvas, verifyURL, { width: 220, margin: 1 }, (err) => {
+      if (err) console.error(err);
+    });
+
+    shareLink.textContent = verifyURL;
+    shareBtn.onclick = () => copyShareLink(verifyURL);
+
+    qrSection.classList.remove('hidden');
+    toast('🔗 QR & lien prêts');
+  } catch (e) {
+    console.error(e);
+    toast('❌ Erreur rendu QR');
+  }
+}
+
+async function copyShareLink(link) {
+  try {
+    await navigator.clipboard.writeText(link);
+    toast('✅ Lien copié');
+  } catch {
+    toast('❌ Impossible de copier');
+  }
+}
+
+// ---------- Boutons de la page ----------
+window.signup = signup;
+window.login  = login;
+window.logout = logout;
+window.loadMyTokens = loadMyTokens;
+window.mintToken = mintToken;
+
+// ---------- Init ----------
+document.addEventListener('DOMContentLoaded', () => {
+  renderSession();
+  // Pré-remplir la base URL si vide
+  if (apiInput && !apiInput.value.trim()) {
+    apiInput.value = 'https://foodgoov.onrender.com';
+  }
+});
 </script>
 </body>
 </html>
