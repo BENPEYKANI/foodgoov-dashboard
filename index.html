@@ -151,21 +151,14 @@
   }
 }</textarea>
 
-  <div class="mt-3 flex items-center gap-3">
-    <button class="btn btn-primary" onclick="mintToken()">Mint token</button>
-    <div id="mintResult" class="text-sm text-gray-500"></div>
-  </div>
-
-<!-- Conteneur QR -->
-<div id="qrSection" class="hidden mt-5 border-t border-gray-200 pt-4 text-center">
-  <canvas id="qrCanvas" class="mx-auto mb-2"></canvas>
-  <button id="shareBtn" class="btn btn-muted text-sm" onclick="copyShareLink()">🔗 Copier</button>
-  <p id="shareLink" class="text-[11px] text-gray-400 mt-2"></p>
+<div class="mt-3 flex items-center gap-3">
+  <button class="btn btn-primary" onclick="mintToken()">Mint token</button>
 </div>
 
-  <!-- Résultat et QR Code -->
+<!-- Résultat (message succès/erreur) -->
 <div id="mintResult" class="text-sm text-gray-500 mt-3"></div>
 
+<!-- Conteneur QR (caché au début) -->
 <div id="qrSection" class="hidden mt-5 border-t border-gray-200 pt-4 text-center">
   <canvas id="qrCanvas" class="mx-auto mb-2"></canvas>
   <button id="shareBtn" class="btn btn-muted text-sm" onclick="copyShareLink()">🔗 Copier</button>
