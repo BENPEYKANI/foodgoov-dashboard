@@ -170,142 +170,231 @@
        SCRIPT PRINCIPAL
        ========================= -->
   <script>
-const els = {
-  base: document.getElementById('apiBase') || document.querySelector('input[type="url"], #apiBaseURL'),
-  session: document.getElementById('sessionBox') || document.querySelector('[data-session]'),
-  mintBody: document.getElementById('mintBody'),
-  mintResult: document.getElementById('mintResult'),
-  qrSection: document.getElementById('qrSection'),
-  qrCanvas: document.getElementById('qrCanvas'),
-  shareLink: document.getElementById('shareLink'),
-  loginEmail: document.getElementById('loginEmail'),
-  loginPassword: document.getElementById('loginPassword'),
-  signupDisplay: document.getElementById('signupDisplay'),
-  signupEmail: document.getElementById('signupEmail'),
-  signupPassword: document.getElementById('signupPassword'),
-};
-
-function getBase() {
-  const v = (els.base?.value || '').trim().replace(/\/+$/,'');
-  if (!v) throw new Error("API Base URL manquante");
-  localStorage.setItem('fg_base', v);
-  return v;
-}
-(function restoreBase(){
-  const saved = localStorage.getItem('fg_base');
-  if (saved && els.base) els.base.value = saved;
-})();
-
-function setSession(display, token) {
-  localStorage.setItem('fg_sess', token);
-  localStorage.setItem('fg_name', display || '');
-  if (els.session) els.session.textContent = `${display || '—'} • ${token.slice(0,8)}…`;
-}
-
-function getSession() {
-  return localStorage.getItem('fg_sess') || '';
-}
-
-async function api(path, opts = {}) {
-  const base = getBase();
-  const res = await fetch(`${base}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(opts.headers||{}) },
-    ...opts
-  });
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
-  if (!res.ok) {
-    const msg = data?.detail || data?.error || text || `HTTP ${res.status}`;
-    throw new Error(msg);
+/* ========= Helpers UI / Debug ========= */
+function toast(msg, ok=true) {
+  let box = document.getElementById('fg_toast');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'fg_toast';
+    box.style.position = 'fixed';
+    box.style.left = '50%';
+    box.style.bottom = '18px';
+    box.style.transform = 'translateX(-50%)';
+    box.style.zIndex = '99999';
+    box.style.maxWidth = '90%';
+    box.style.fontSize = '14px';
+    box.style.padding = '10px 14px';
+    box.style.borderRadius = '10px';
+    box.style.boxShadow = '0 6px 18px rgba(0,0,0,.15)';
+    box.style.color = '#fff';
+    box.style.textAlign = 'center';
+    document.body.appendChild(box);
   }
-  return data;
+  box.style.background = ok ? '#16a34a' : '#b91c1c';
+  box.textContent = msg;
+  box.style.opacity = '1';
+  setTimeout(()=>{ box.style.opacity = '0'; }, 2800);
+}
+// Attrape les erreurs JS globales (utile sur iPad sans console)
+window.addEventListener('error', (e)=>{
+  toast('JS Error: ' + (e.message || e.error?.message || 'inconnu'), false);
+});
+
+/* ========= Sélecteurs (doivent exister dans le HTML) ========= */
+const elApiBase     = document.getElementById('apiBase') || document.querySelector('input[placeholder^="https://"]');
+const elSession     = document.getElementById('sessionInfo') || document.querySelector('[data-session]') || document.querySelectorAll('section,div,span')[0];
+const elTokensBox   = document.getElementById('tokensBox') || document.querySelector('.tokens-box') || document.querySelectorAll('section,div')[10];
+const elLimit       = document.getElementById('limit')  || document.querySelector('input#limit')  || document.querySelectorAll('input[type="number"]')[0];
+const elOffset      = document.getElementById('offset') || document.querySelector('input#offset') || document.querySelectorAll('input[type="number"]')[1];
+
+const elLoginEmail    = document.getElementById('loginEmail')    || document.querySelector('input[placeholder="Email"]');
+const elLoginPassword = document.getElementById('loginPassword') || document.querySelector('input[placeholder^="Mot de passe"],input[type="password"]');
+
+const elSignupDisplay  = document.getElementById('signupDisplay')  || document.querySelector('input[placeholder^="Nom producteur"]');
+const elSignupEmail    = document.getElementById('signupEmail')    || document.querySelectorAll('input[placeholder="Email"]')[1];
+const elSignupPassword = document.getElementById('signupPassword') || document.querySelectorAll('input[type="password"]')[1];
+
+const elMintBody   = document.getElementById('mintBody')   || document.querySelector('textarea');
+const elMintResult = document.getElementById('mintResult') || document.querySelector('#mintResult');
+
+const elQrSection  = document.getElementById('qrSection')  || document.querySelector('#qrSection');
+const elQrCanvas   = document.getElementById('qrCanvas')   || document.querySelector('#qrCanvas');
+const elShareBtn   = document.getElementById('shareBtn')   || document.querySelector('#shareBtn');
+const elShareLink  = document.getElementById('shareLink')  || document.querySelector('#shareLink');
+
+/* ========= Stockage local ========= */
+function getApiBase() {
+  return (elApiBase?.value?.trim()) || localStorage.getItem('fg_api_base') || '';
+}
+function setApiBase(val) {
+  if (!val) return;
+  localStorage.setItem('fg_api_base', val);
+  if (elApiBase) elApiBase.value = val;
+}
+function setSession(sessToken, displayName) {
+  localStorage.setItem('fg_session', sessToken);
+  localStorage.setItem('fg_display', displayName || '');
+  if (elSession) elSession.textContent = (displayName || '—') + ' • ' + (sessToken || '—').slice(0,10) + '…';
+}
+function getSession() {
+  return localStorage.getItem('fg_session') || '';
 }
 
-// --- Auth: login ---
+/* ========= Helper HTTP ========= */
+async function http(method, path, body, {auth=false} = {}) {
+  const base = getApiBase();
+  if (!base) throw new Error("API Base URL manquante");
+  const url = base.replace(/\/+$/,'') + path;
+  const headers = {"Content-Type": "application/json"};
+  if (auth) {
+    const sess = getSession();
+    if (!sess) throw new Error("Pas de session. Connecte-toi.");
+    headers['x-session'] = sess; // backend accepte x-session
+  }
+  const res = await fetch(url, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(()=> '');
+    throw new Error(`HTTP ${res.status}: ${txt || res.statusText}`);
+  }
+  // certaines routes renvoient du JSON
+  const ct = res.headers.get('content-type') || '';
+  if (ct.includes('application/json')) return await res.json();
+  return await res.text();
+}
+
+/* ========= Actions UI (liées aux boutons) ========= */
+async function testPublic() {
+  try {
+    const data = await http('GET', '/v1/anchors/latest');
+    toast('API OK: anchor=' + (Array.isArray(data?.items) ? data.items.length : '—'));
+  } catch (e) {
+    toast(e.message, false);
+  }
+}
+
+async function loadMyTokens() {
+  try {
+    const l = parseInt(elLimit?.value || '25', 10) || 25;
+    const o = parseInt(elOffset?.value || '0', 10) || 0;
+    const data = await http('GET', `/v1/admin/my-tokens?limit=${l}&offset=${o}`, null, {auth:true});
+    const items = data?.items || [];
+    if (elTokensBox) {
+      elTokensBox.innerHTML = items.length
+        ? items.map(t => `<div class="text-[12px] mb-2">
+            <div class="font-semibold">${t.domain_id} • ${t.vintage_year} • ${t.batch_code}</div>
+            <div class="text-gray-500 break-all">${t.token_id}</div>
+          </div>`).join('')
+        : '<div class="text-gray-400 text-sm">Aucun token.</div>';
+    }
+    toast(`Chargé: ${items.length} lot(s)`);
+  } catch (e) {
+    toast(e.message, false);
+  }
+}
+
 async function login() {
   try {
-    const body = {
-      email: els.loginEmail.value.trim(),
-      password: els.loginPassword.value
-    };
-    const data = await api('/v1/auth/login', { method: 'POST', body: JSON.stringify(body) });
-    setSession(data.display_name, data.session_token);
-    alert(`Connecté : ${data.display_name}`);
+    const email = elLoginEmail?.value?.trim();
+    const password = elLoginPassword?.value || '';
+    if (!email || !password) throw new Error("Email et mot de passe requis.");
+    const data = await http('POST', '/v1/auth/login', {email, password});
+    setSession(data.session_token, data.display_name);
+    toast('Connecté : ' + (data.display_name || email));
   } catch (e) {
-    alert(`Connexion échouée : ${e.message}`);
+    toast(e.message, false);
   }
 }
 
-// --- Auth: signup ---
 async function signup() {
   try {
-    const body = {
-      display_name: els.signupDisplay.value.trim(),
-      email: els.signupEmail.value.trim(),
-      password: els.signupPassword.value
-    };
-    const data = await api('/v1/auth/signup', { method: 'POST', body: JSON.stringify(body) });
-    setSession(data.display_name, data.session_token);
-    alert(`Compte créé : ${data.display_name}`);
+    const display_name = elSignupDisplay?.value?.trim();
+    const email = elSignupEmail?.value?.trim();
+    const password = elSignupPassword?.value || '';
+    if (!display_name || !email || !password) throw new Error("Tous les champs de création sont requis.");
+    const data = await http('POST', '/v1/auth/signup', {display_name, email, password});
+    setSession(data.session_token, data.display_name);
+    toast('Compte créé : ' + data.display_name);
   } catch (e) {
-    alert(`Création échouée : ${e.message}`);
+    toast(e.message, false);
   }
 }
 
-// --- MINT ---
+function renderQR(tokenId, qrUrlFromApi) {
+  try {
+    if (!elQrSection || !elQrCanvas) return;
+    elQrSection.classList.remove('hidden');
+    const shareUrl = qrUrlFromApi || (location.origin + '/verify.html?token_id=' + tokenId);
+    if (elShareBtn) {
+      elShareBtn.onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(shareUrl);
+          if (elShareLink) elShareLink.textContent = shareUrl;
+          toast('Lien copié');
+        } catch { toast('Impossible de copier', false); }
+      };
+    }
+    if (elShareLink) elShareLink.textContent = shareUrl;
+    if (window.QRCode && QRCode.toCanvas) {
+      QRCode.toCanvas(elQrCanvas, shareUrl, {width: 240}, (err)=>{
+        if (err) toast('QR error: '+err.message, false);
+      });
+    } else {
+      toast('Librairie QRCode introuvable', false);
+    }
+  } catch (e) {
+    toast(e.message, false);
+  }
+}
+
 async function mintToken() {
   try {
+    // vérifier session
     const sess = getSession();
-    if (!sess) throw new Error("Connecte-toi d'abord (x-session manquant)");
-    let payload;
-    try { payload = JSON.parse(els.mintBody.value); }
-    catch { throw new Error("JSON du mint invalide"); }
+    if (!sess) throw new Error("Connecte-toi d'abord.");
 
-    const data = await api('/v1/tokens', {
-      method: 'POST',
-      headers: { 'x-session': sess },
-      body: JSON.stringify(payload)
-    });
-
-    els.mintResult.textContent = `✅ Mint OK\nToken: ${data.token_id}\nQR: ${data.qr_url}`;
-    renderQR(data.qr_url);
+    // lire le JSON du textarea
+    let body;
+    try {
+      body = JSON.parse(elMintBody?.value || '{}');
+    } catch {
+      throw new Error("JSON invalide dans la zone Mint.");
+    }
+    const data = await http('POST', '/v1/tokens', body, {auth:true});
+    const tokenId = data?.token_id;
+    if (elMintResult) elMintResult.textContent = JSON.stringify(data, null, 2);
+    if (tokenId) renderQR(tokenId, data?.qr_url);
+    toast('Mint OK');
   } catch (e) {
-    els.mintResult.textContent = `❌ ${e.message}`;
-    if (window.console) console.error(e);
+    if (elMintResult) elMintResult.textContent = e.message;
+    toast(e.message, false);
   }
 }
 
-// --- QR + partage ---
-function renderQR(text) {
-  try {
-    const canvas = els.qrCanvas;
-    const size = Math.min(320, Math.max(180, canvas.parentElement.clientWidth - 40));
-    canvas.width = size; canvas.height = size;
-    QRCode.toCanvas(canvas, text, { width: size, margin: 1 }, (err) => {
-      if (err) { els.mintResult.textContent = '❌ QR failed'; return; }
-      els.qrSection?.classList?.remove('hidden');
-      els.shareLink.textContent = text;
-      els.shareLink.href = text;
-    });
-  } catch (e) {
-    if (window.console) console.error(e);
+/* ========= Wiring & init ========= */
+document.addEventListener('DOMContentLoaded', ()=>{
+  // Pré-remplir base URL (mémorisée)
+  const saved = localStorage.getItem('fg_api_base');
+  if (saved && elApiBase) elApiBase.value = saved;
+  if (elApiBase) {
+    elApiBase.addEventListener('change', ()=> setApiBase(elApiBase.value.trim()));
+    elApiBase.addEventListener('blur',   ()=> setApiBase(elApiBase.value.trim()));
   }
-}
+  // Afficher session si déjà stockée
+  const sess = getSession();
+  const name = localStorage.getItem('fg_display') || '';
+  if (sess) setSession(sess, name);
+});
 
-async function copyShareLink() {
-  try {
-    const t = els.shareLink.textContent;
-    await navigator.clipboard.writeText(t);
-    alert("Lien copié");
-  } catch { alert("Impossible de copier"); }
-}
-
-// Expose pour tes boutons HTML
+// Expose pour les boutons inline (si ton HTML utilise onclick="...")
+window.testPublic = testPublic;
+window.loadMyTokens = loadMyTokens;
 window.login = login;
 window.signup = signup;
 window.mintToken = mintToken;
-window.copyShareLink = copyShareLink;
 </script>
 </body>
 </html>
