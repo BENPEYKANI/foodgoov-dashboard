@@ -170,242 +170,142 @@
        SCRIPT PRINCIPAL
        ========================= -->
   <script>
-  /* =========================
-     Helpers & Etat local
-     ========================= */
-  const LS = {
-    apiBase: "fg_api_base",
-    session: "fg_session",
-    apiKey: "fg_api_key",
-    displayName: "fg_display_name",
-  };
+const els = {
+  base: document.getElementById('apiBase') || document.querySelector('input[type="url"], #apiBaseURL'),
+  session: document.getElementById('sessionBox') || document.querySelector('[data-session]'),
+  mintBody: document.getElementById('mintBody'),
+  mintResult: document.getElementById('mintResult'),
+  qrSection: document.getElementById('qrSection'),
+  qrCanvas: document.getElementById('qrCanvas'),
+  shareLink: document.getElementById('shareLink'),
+  loginEmail: document.getElementById('loginEmail'),
+  loginPassword: document.getElementById('loginPassword'),
+  signupDisplay: document.getElementById('signupDisplay'),
+  signupEmail: document.getElementById('signupEmail'),
+  signupPassword: document.getElementById('signupPassword'),
+};
 
-  function $(sel) { return document.querySelector(sel); }
-  function prettyDate(iso) { try { return new Date(iso).toLocaleString(); } catch { return iso; } }
+function getBase() {
+  const v = (els.base?.value || '').trim().replace(/\/+$/,'');
+  if (!v) throw new Error("API Base URL manquante");
+  localStorage.setItem('fg_base', v);
+  return v;
+}
+(function restoreBase(){
+  const saved = localStorage.getItem('fg_base');
+  if (saved && els.base) els.base.value = saved;
+})();
 
-  function getApiBase() {
-    const el = $("#apiBase");
-    const v = (el?.value || "").trim();
-    return v || localStorage.getItem(LS.apiBase) || "";
-  }
-  function saveApiBase() {
-    const v = ($("#apiBase")?.value || "").trim();
-    if (v) localStorage.setItem(LS.apiBase, v);
-    // Feedback statut visuel
-    $("#statusBadge").textContent = v ? "En ligne ?" : "Hors ligne";
-  }
+function setSession(display, token) {
+  localStorage.setItem('fg_sess', token);
+  localStorage.setItem('fg_name', display || '');
+  if (els.session) els.session.textContent = `${display || '—'} • ${token.slice(0,8)}…`;
+}
 
-  function storeSession(data) {
-    if (data?.session_token) localStorage.setItem(LS.session, data.session_token);
-    if (data?.api_key)       localStorage.setItem(LS.apiKey, data.api_key);
-    if (data?.display_name)  localStorage.setItem(LS.displayName, data.display_name);
-    renderSessionBadge();
-  }
-  function clearSession() {
-    localStorage.removeItem(LS.session);
-    localStorage.removeItem(LS.apiKey);
-    localStorage.removeItem(LS.displayName);
-    renderSessionBadge();
-  }
-  function currentSession() { return localStorage.getItem(LS.session) || ""; }
-  function currentApiKey()   { return localStorage.getItem(LS.apiKey) || ""; }
+function getSession() {
+  return localStorage.getItem('fg_sess') || '';
+}
 
-  function renderSessionBadge() {
-    const s = currentSession();
-    const name = localStorage.getItem(LS.displayName) || "";
-    const box = $("#sessionBox");
-    if (!box) return;
-    if (!s) {
-      box.innerHTML = "—";
-      $("#connectBtn")?.classList.remove("hidden");
-      $("#disconnectBtn")?.classList.add("hidden");
-    } else {
-      const short = s.slice(0, 10) + "…";
-      box.innerHTML = `${name ? `<span class="font-semibold">${name}</span> • ` : ""}<span class="text-gray-500">${short}</span>`;
-      $("#connectBtn")?.classList.add("hidden");
-      $("#disconnectBtn")?.classList.remove("hidden");
-    }
-  }
-
-  /* =========================
-     Requêtes API
-     ========================= */
-  async function apiGET(path, { auth=false, params=null } = {}) {
-    const base = getApiBase(); if (!base) throw new Error("API Base URL manquante");
-    const url = new URL(path, base);
-    if (params) Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, v));
-    const headers = { "Accept": "application/json" };
-    if (auth) headers["x-session"] = currentSession();
-    const r = await fetch(url.toString(), { headers });
-    if (!r.ok) throw await r.json().catch(()=>({detail:`Erreur ${r.status}`}));
-    return r.json();
-  }
-
-  async function apiPOST(path, body, { auth=false, includeApiKey=true } = {}) {
-    const base = getApiBase(); if (!base) throw new Error("API Base URL manquante");
-    const headers = { "Content-Type": "application/json", "Accept": "application/json" };
-    if (auth) headers["x-session"] = currentSession();
-    if (includeApiKey && currentApiKey()) headers["x-api-key"] = currentApiKey(); // toléré/ignoré suivant l’endpoint
-    const r = await fetch(new URL(path, base).toString(), {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body || {})
-    });
-    if (!r.ok) throw await r.json().catch(()=>({detail:`Erreur ${r.status}`}));
-    return r.json();
-  }
-
-  /* =========================
-     UI : Status, Tokens, QR
-     ========================= */
-  async function testPublicAPI() {
-    try {
-      saveApiBase();
-      const data = await apiGET("/v1/status");
-      $("#statusBadge").textContent = "En ligne";
-      alert(`OK • ${data.message || "API opérationnelle"}`);
-    } catch (e) {
-      $("#statusBadge").textContent = "Hors ligne";
-      alert(`Échec : ${e.detail || e.message}`);
-    }
-  }
-
-  async function loadMyTokens() {
-    try {
-      saveApiBase();
-      const limit = ($("#limit")?.value || "25").trim();
-      const offset = ($("#offset")?.value || "0").trim();
-      const data = await apiGET("/v1/admin/my-tokens", { auth: true, params: { limit, offset }});
-      const box = $("#myTokens");
-      if (!box) return;
-      if (!data?.items?.length) {
-        box.innerHTML = "—";
-        return;
-      }
-      box.innerHTML = data.items.map(t => {
-        const line = `${t.domain_id} • ${t.vintage_year} • ${t.batch_code} — ${t.issuer || ""}`;
-        return `<div class="py-1 text-sm flex items-center justify-between">
-          <span class="truncate">${line}</span>
-          <button class="text-[11px] underline" onclick="openVerify('${t.token_id}')">Voir</button>
-        </div>`;
-      }).join("");
-    } catch (e) {
-      alert(`Échec chargement : ${e.detail || e.message}`);
-    }
-  }
-
-  function openVerify(tokenId) {
-    const url = `${location.origin}/verify.html?token_id=${encodeURIComponent(tokenId)}`;
-    window.open(url, "_blank");
-  }
-
-  async function mintToken() {
-    try {
-      saveApiBase();
-      const raw = $("#mintBody")?.value || "{}";
-      let body;
-      try { body = JSON.parse(raw); }
-      catch { alert("JSON non valide dans le bloc Mint."); return; }
-
-      const out = await apiPOST("/v1/tokens", body, { auth: true, includeApiKey: !!currentApiKey() });
-      const tokenId = out?.token_id;
-      $("#mintResult").textContent = tokenId ? `✅ Token créé : ${tokenId}` : "Créé";
-
-      if (tokenId) {
-        await renderQR(tokenId);
-        updateShareLink(tokenId);
-      }
-      loadMyTokens();
-    } catch (e) {
-      $("#mintResult").textContent = `❌ ${e.detail || e.message}`;
-    }
-  }
-
-  async function renderQR(tokenId) {
-    const canvas = $("#qrCanvas");
-    const section = $("#qrSection");
-    if (!canvas || !section) return;
-    const verifyUrl = `${location.origin}/verify.html?token_id=${encodeURIComponent(tokenId)}`;
-    await QRCode.toCanvas(canvas, verifyUrl, { width: 220, margin: 1 });
-    section.classList.remove("hidden");
-  }
-
-  function updateShareLink(tokenId) {
-    const p = $("#shareLink");
-    if (!p) return;
-    const verifyUrl = `${location.origin}/verify.html?token_id=${encodeURIComponent(tokenId)}`;
-    p.textContent = verifyUrl;
-    p.dataset.url = verifyUrl;
-  }
-
-  async function copyShareLink() {
-    const p = $("#shareLink");
-    if (!p?.dataset?.url) return;
-    await navigator.clipboard.writeText(p.dataset.url);
-    alert("Lien de vérification copié !");
-  }
-
-  /* =========================
-     Auth : login / signup / logout
-     ========================= */
-  async function login() {
-    try {
-      saveApiBase();
-      const email = ($("#loginEmail")?.value || "").trim();
-      const password = ($("#loginPassword")?.value || "").trim();
-      if (!email || !password) { alert("Email et mot de passe requis."); return; }
-
-      const data = await apiPOST("/v1/auth/login", { email, password }, { auth:false, includeApiKey:false });
-      storeSession(data);
-      alert(`Connecté : ${data.display_name || email}`);
-    } catch (e) {
-      alert(`Connexion échouée : ${e.detail || e.message}`);
-    }
-  }
-
-  async function signup() {
-    try {
-      saveApiBase();
-      const display_name = ($("#signupDisplay")?.value || "").trim();
-      const email = ($("#signupEmail")?.value || "").trim();
-      const password = ($("#signupPassword")?.value || "").trim();
-      if (!display_name || !email || !password) { alert("Tous les champs sont requis."); return; }
-
-      const data = await apiPOST("/v1/auth/signup", { display_name, email, password }, { auth:false, includeApiKey:false });
-      storeSession(data);
-      alert(`Compte créé : ${data.display_name || display_name}`);
-    } catch (e) {
-      alert(`Création échouée : ${e.detail || e.message}`);
-    }
-  }
-
-  function logout() {
-    clearSession();
-    alert("Déconnecté.");
-  }
-
-  /* =========================
-     Bootstrap UI
-     ========================= */
-  function wireButtonsIfNeeded() {
-    $("#testBtn")    && ($("#testBtn").onclick    = testPublicAPI);
-    $("#loadBtn")    && ($("#loadBtn").onclick    = loadMyTokens);
-    $("#loginBtn")   && ($("#loginBtn").onclick   = login);
-    $("#signupBtn")  && ($("#signupBtn").onclick  = signup);
-    $("#disconnectBtn") && ($("#disconnectBtn").onclick = logout);
-    $("#mintBtn")    && ($("#mintBtn").onclick    = mintToken);
-    $("#shareBtn")   && ($("#shareBtn").onclick   = copyShareLink);
-    $("#connectBtn") && ($("#connectBtn").onclick = () => {
-      document.querySelector('#loginEmail')?.scrollIntoView({behavior:'smooth', block:'center'});
-    });
-  }
-
-  window.addEventListener("DOMContentLoaded", () => {
-    const saved = localStorage.getItem(LS.apiBase);
-    if (saved && $("#apiBase")) $("#apiBase").value = saved;
-    renderSessionBadge();
-    wireButtonsIfNeeded();
+async function api(path, opts = {}) {
+  const base = getBase();
+  const res = await fetch(`${base}${path}`, {
+    headers: { 'Content-Type': 'application/json', ...(opts.headers||{}) },
+    ...opts
   });
-  </script>
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+  if (!res.ok) {
+    const msg = data?.detail || data?.error || text || `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  return data;
+}
+
+// --- Auth: login ---
+async function login() {
+  try {
+    const body = {
+      email: els.loginEmail.value.trim(),
+      password: els.loginPassword.value
+    };
+    const data = await api('/v1/auth/login', { method: 'POST', body: JSON.stringify(body) });
+    setSession(data.display_name, data.session_token);
+    alert(`Connecté : ${data.display_name}`);
+  } catch (e) {
+    alert(`Connexion échouée : ${e.message}`);
+  }
+}
+
+// --- Auth: signup ---
+async function signup() {
+  try {
+    const body = {
+      display_name: els.signupDisplay.value.trim(),
+      email: els.signupEmail.value.trim(),
+      password: els.signupPassword.value
+    };
+    const data = await api('/v1/auth/signup', { method: 'POST', body: JSON.stringify(body) });
+    setSession(data.display_name, data.session_token);
+    alert(`Compte créé : ${data.display_name}`);
+  } catch (e) {
+    alert(`Création échouée : ${e.message}`);
+  }
+}
+
+// --- MINT ---
+async function mintToken() {
+  try {
+    const sess = getSession();
+    if (!sess) throw new Error("Connecte-toi d'abord (x-session manquant)");
+    let payload;
+    try { payload = JSON.parse(els.mintBody.value); }
+    catch { throw new Error("JSON du mint invalide"); }
+
+    const data = await api('/v1/tokens', {
+      method: 'POST',
+      headers: { 'x-session': sess },
+      body: JSON.stringify(payload)
+    });
+
+    els.mintResult.textContent = `✅ Mint OK\nToken: ${data.token_id}\nQR: ${data.qr_url}`;
+    renderQR(data.qr_url);
+  } catch (e) {
+    els.mintResult.textContent = `❌ ${e.message}`;
+    if (window.console) console.error(e);
+  }
+}
+
+// --- QR + partage ---
+function renderQR(text) {
+  try {
+    const canvas = els.qrCanvas;
+    const size = Math.min(320, Math.max(180, canvas.parentElement.clientWidth - 40));
+    canvas.width = size; canvas.height = size;
+    QRCode.toCanvas(canvas, text, { width: size, margin: 1 }, (err) => {
+      if (err) { els.mintResult.textContent = '❌ QR failed'; return; }
+      els.qrSection?.classList?.remove('hidden');
+      els.shareLink.textContent = text;
+      els.shareLink.href = text;
+    });
+  } catch (e) {
+    if (window.console) console.error(e);
+  }
+}
+
+async function copyShareLink() {
+  try {
+    const t = els.shareLink.textContent;
+    await navigator.clipboard.writeText(t);
+    alert("Lien copié");
+  } catch { alert("Impossible de copier"); }
+}
+
+// Expose pour tes boutons HTML
+window.login = login;
+window.signup = signup;
+window.mintToken = mintToken;
+window.copyShareLink = copyShareLink;
+</script>
 </body>
 </html>
