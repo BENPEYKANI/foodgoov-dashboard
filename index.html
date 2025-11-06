@@ -416,5 +416,22 @@ document.addEventListener('DOMContentLoaded', () => {
   setSessionInfo();
 });
 </script>
+  <script>
+/* 🔔 Smoke test minimal : prouve que le JS s'exécute et que les boutons existent */
+alert("✅ JS bien chargé (smoke test)");
+
+const ids = ["testBtn","loadBtn","refreshBtn","loginBtn","signupBtn","mintBtn","shareBtn","apiBase"];
+const missing = ids.filter(id => !document.getElementById(id));
+if (missing.length) {
+  alert("⚠️ Éléments introuvables: " + missing.join(", "));
+} else {
+  alert("👍 Tous les éléments clés ont été trouvés");
+}
+
+/* Branche trois clics de test (suffisant pour valider que ça marche) */
+document.getElementById("testBtn")   ?.addEventListener("click", () => alert("✅ Click TEST OK"));
+document.getElementById("loginBtn")  ?.addEventListener("click", () => alert("✅ Click LOGIN OK"));
+document.getElementById("mintBtn")   ?.addEventListener("click", () => alert("✅ Click MINT OK"));
+</script>
 </body>
 </html>
