@@ -171,175 +171,216 @@
   </main>
 
   <!-- Script principal -->
-  <script>
-    /* ---------------- State ---------------- */
-    const state = {
-      baseUrl: localStorage.getItem('fg_api_base') || '',
-      session: JSON.parse(localStorage.getItem('fg_session') || 'null'), // {display_name, session_token, api_key}
-    };
+<script>
+/* ============ Helpers généraux ============ */
+function $(sel){ return document.querySelector(sel) }
+function text(el, v){ if(el) el.textContent = v }
 
-    /* --------------- Helpers --------------- */
-    const qs = (id) => document.getElementById(id);
-    const api = (path) => {
-      const base = (qs('apiBase').value || '').trim().replace(/\/+$/,'');
-      if (!base) throw new Error("API Base URL manquante");
-      return base + path;
-    };
-    const setStatus = (text) => { qs('statusPill').textContent = text; };
-    const saveBase = () => {
-      const v = (qs('apiBase').value || '').trim();
-      localStorage.setItem('fg_api_base', v);
-    };
-    const loadSessionUI = () => {
-      if (state.session) {
-        qs('sessionInfo').textContent = `${state.session.display_name} · ${state.session.session_token.slice(0,6)}…`;
-        setStatus('En ligne');
-      } else {
-        qs('sessionInfo').textContent = '—';
-        setStatus('Hors ligne');
-      }
-    };
+/* Clés locales */
+const LS_BASE   = "fg_api_base"
+const LS_SESS   = "fg_session_token"
+const LS_NAME   = "fg_session_name"
 
-    /* --------------- Auth APIs --------------- */
-    async function signup() {
-      try {
-        saveBase();
-        const body = {
-          display_name: qs('signupDisplay').value.trim(),
-          email: qs('signupEmail').value.trim(),
-          password: qs('signupPassword').value.trim(),
-        };
-        const r = await fetch(api('/v1/auth/signup'), {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(body),
-        });
-        if (!r.ok) throw new Error((await r.json()).detail || 'Signup failed');
-        const data = await r.json(); // {producer_id, api_key, session_token, display_name}
-        state.session = data;
-        localStorage.setItem('fg_session', JSON.stringify(data));
-        loadSessionUI();
-        alert(`Compte créé : ${data.display_name}`);
-      } catch(e) { alert(`Erreur création compte : ${e.message}`); }
+/* Récup affichages */
+function apiBase(){ return ($("#apiBase")?.value || "").trim() }
+function sessionToken(){ return localStorage.getItem(LS_SESS) || "" }
+function setSessionDisplay(){
+  const name = localStorage.getItem(LS_NAME) || "—"
+  const sess = sessionToken()
+  const short = sess ? (sess.slice(0,7)+"…") : "—"
+  text($("#sessionBox"), `${name} • ${short}`)
+  // statut en haut à droite (si existe)
+  const st = $("#statusDot"); if(st){ st.textContent = sess ? "En ligne" : "Hors ligne" }
+}
+
+/* Sauvegarde API base dans l’input */
+(function boot(){
+  const base = localStorage.getItem(LS_BASE) || "https://foodgoov.onrender.com"
+  if($("#apiBase")) $("#apiBase").value = base
+  setSessionDisplay()
+})();
+
+/* Persister API base au changement */
+$("#apiBase")?.addEventListener("change", e=>{
+  localStorage.setItem(LS_BASE, apiBase())
+})
+
+/* ============ Auth ============ */
+async function signup(){
+  const base = apiBase()
+  const display = $("#signupDisplay")?.value?.trim()
+  const email   = $("#signupEmail")?.value?.trim()?.toLowerCase()
+  const pass    = $("#signupPassword")?.value || ""
+
+  if(!base || !display || !email || !pass){ return alert("Champs manquants.") }
+
+  try{
+    const r = await fetch(base + "/v1/auth/signup", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ display_name: display, email, password: pass })
+    })
+    const data = await r.json()
+    if(!r.ok){ throw new Error(data.detail || r.status) }
+
+    // stocker session + nom
+    localStorage.setItem(LS_SESS, data.session_token)
+    localStorage.setItem(LS_NAME, data.display_name || display)
+    setSessionDisplay()
+    alert("Compte créé 👍")
+  }catch(err){ alert("Erreur signup : " + err.message) }
+}
+
+async function login(){
+  const base = apiBase()
+  const email = $("#loginEmail")?.value?.trim()?.toLowerCase()
+  const pass  = $("#loginPassword")?.value || ""
+  if(!base || !email || !pass){ return alert("Champs manquants.") }
+
+  try{
+    const r = await fetch(base + "/v1/auth/login", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ email, password: pass })
+    })
+    const data = await r.json()
+    if(!r.ok){ throw new Error(data.detail || r.status) }
+
+    localStorage.setItem(LS_SESS, data.session_token)
+    localStorage.setItem(LS_NAME, data.display_name || "—")
+    setSessionDisplay()
+    alert("Connecté : " + (data.display_name || "—"))
+  }catch(err){ alert("Erreur login : " + err.message) }
+}
+
+/* ============ Test API publique ============ */
+async function testPublicApi(){
+  const base = apiBase()
+  if(!base) return alert("Renseigne l’API Base URL")
+  try{
+    const r = await fetch(base + "/v1/status")
+    const j = await r.json()
+    alert("Statut : " + (j.message || JSON.stringify(j)))
+  }catch(e){ alert("Échec : " + e.message) }
+}
+
+/* ============ Mes tokens (auth) ============ */
+async function loadMyTokens(){
+  const base = apiBase()
+  const sess = sessionToken()
+  const limit  = parseInt($("#listLimit")?.value || "25", 10)
+  const offset = parseInt($("#listOffset")?.value || "0", 10)
+  const box = $("#myTokensBox")
+  if(box) text(box, "—")
+
+  if(!base) return alert("Renseigne l’API Base URL")
+  if(!sess) return alert("Connecte-toi d'abord")
+
+  try{
+    const r = await fetch(`${base}/v1/admin/my-tokens?limit=${limit}&offset=${offset}`, {
+      headers: { "x-session": sess }
+    })
+    const data = await r.json()
+    if(!r.ok){ throw new Error(data.detail || r.status) }
+
+    if(!data.items?.length){
+      if(box) text(box, "Aucun lot")
+      return
     }
-
-    async function login() {
-      try {
-        saveBase();
-        const body = {
-          email: qs('loginEmail').value.trim(),
-          password: qs('loginPassword').value.trim(),
-        };
-        const r = await fetch(api('/v1/auth/login'), {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(body),
-        });
-        if (!r.ok) throw new Error((await r.json()).detail || 'Login failed');
-        const data = await r.json(); // {producer_id, api_key, session_token, display_name}
-        state.session = data;
-        localStorage.setItem('fg_session', JSON.stringify(data));
-        loadSessionUI();
-        alert(`Connecté : ${data.display_name}`);
-      } catch(e) { alert(`Connexion échouée : ${e.message}`); }
+    if(box){
+      box.innerHTML = data.items.map(it => (
+        `<div class="text-[13px] mb-1">
+           <span class="font-semibold">${it.token_id}</span>
+           — ${it.category} • ${it.domain_id} • ${it.vintage_year} • ${it.batch_code}
+         </div>`
+      )).join("")
     }
+  }catch(err){
+    alert("Chargement échoué : " + err.message)
+  }
+}
 
-    /* --------------- Public test --------------- */
-    async function testPublic() {
-      try {
-        saveBase();
-        const r = await fetch(api('/v1/status'));
-        if (!r.ok) throw new Error('API status NOK');
-        await r.json();
-        alert('API publique OK');
-      } catch(e) { alert(`Test API publique : ${e.message}`); }
+/* ============ Mint token (auth) ============ */
+async function mintToken(){
+  const base = apiBase()
+  const sess = sessionToken()
+  const resultEl = $("#mintResult")
+
+  if(!base) return alert("Renseigne l’API Base URL")
+  if(!sess) return alert("Connecte-toi d'abord")
+
+  let body
+  try{
+    body = JSON.parse($("#mintBody")?.value || "{}")
+  }catch(e){
+    return alert("JSON invalide dans le bloc Mint")
+  }
+
+  text(resultEl, "⏳ Envoi…")
+  try{
+    const r = await fetch(base + "/v1/tokens", {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "x-session": sess   // <<<<<< ESSENTIEL
+      },
+      body: JSON.stringify(body)
+    })
+    const data = await r.json()
+    if(!r.ok){ throw new Error(data.detail || r.status) }
+
+    text(resultEl, "✅ Token créé : " + data.token_id)
+
+    // QR automatique s’il y a un lien
+    if(data.qr_url){ renderQR(data.qr_url) }
+    else {
+      // sinon, fabrique l’URL de vérif à partir du token_id
+      const url = `${location.origin}/verify.html?token_id=${encodeURIComponent(data.token_id)}`
+      renderQR(url)
     }
+  }catch(err){
+    text(resultEl, "❌ Erreur : " + err.message)
+    alert("Load failed : " + err.message)
+  }
+}
 
-    /* ----------- Tokens (list & mint) ---------- */
-    async function loadMyTokens() {
-      try {
-        if (!state.session) throw new Error('Non connecté');
-        saveBase();
-        const limit = parseInt(qs('listLimit').value || '25', 10);
-        const offset = parseInt(qs('listOffset').value || '0', 10);
-        const r = await fetch(api(`/v1/admin/my-tokens?limit=${limit}&offset=${offset}`), {
-          headers: {
-            'x-session': state.session.session_token,
-          }
-        });
-        if (!r.ok) throw new Error((await r.json()).detail || 'Load failed');
-        const data = await r.json(); // {items:[...]}
-        if (!data.items.length) {
-          qs('tokensList').textContent = '—';
-          return;
-        }
-        const html = data.items.map(t => {
-          return `<div class="py-2 border-b border-[#1f2a44]">
-            <div class="text-xs text-gray-400">${t.category} • ${t.domain_id} • ${t.vintage_year} • ${t.batch_code}</div>
-            <div class="text-sm">Count: ${t.quantity.count} ${t.quantity.unit} • Issuer: ${t.issuer}</div>
-          </div>`;
-        }).join('');
-        qs('tokensList').innerHTML = html;
-      } catch(e) { alert(`Chargement échoué : ${e.message}`); }
-    }
+/* ============ QR Code & Partage ============ */
+function renderQR(url){
+  const sec = $("#qrSection")
+  const cvs = $("#qrCanvas")
+  const link = $("#shareLink")
+  if(!sec || !cvs) return
+  try{
+    sec.classList.remove("hidden")
+    // lib qr-code déjà chargée via CDN dans <head>
+    const qr = new QRCode(cvs, { width: 220, height: 220 })
+    // si la lib dessine sur un canvas existant, on clean avant
+    if(cvs.innerHTML){ cvs.innerHTML = "" }
+    new QRCode(cvs, url)
+    if(link){ link.textContent = url }
+  }catch(e){
+    console.error(e)
+  }
+}
 
-    function renderQR(tokenId) {
-      const vurl = `${qs('apiBase').value.replace(/\/+$/,'')}/verify.html?token_id=${encodeURIComponent(tokenId)}`;
-      const canvas = qs('qrCanvas');
-      QRCode.toCanvas(canvas, vurl, {width: 200, margin: 1}, (err) => {
-        if (err) { console.error(err); return; }
-        qs('shareLink').textContent = vurl;
-        qs('qrSection').classList.remove('hidden');
-      });
-      qs('shareBtn').onclick = async () => {
-        try {
-          await navigator.clipboard.writeText(vurl);
-          qs('shareBtn').textContent = 'Copié ✓';
-          setTimeout(()=> qs('shareBtn').textContent = 'Copier', 1200);
-        } catch {
-          alert('Impossible de copier, copie manuelle nécessaire.');
-        }
-      };
-    }
+async function copyShareLink(){
+  const link = $("#shareLink")?.textContent || ""
+  if(!link) return
+  try{
+    await navigator.clipboard.writeText(link)
+    alert("Lien copié ✅")
+  }catch(e){
+    alert("Impossible de copier : " + e.message)
+  }
+}
 
-    async function mintToken() {
-      try {
-        if (!state.session) throw new Error('Non connecté');
-        saveBase();
-        const body = JSON.parse(qs('mintBody').value);
-        const r = await fetch(api('/v1/tokens'), {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': state.session.api_key,     // clé d’API du producteur
-            'x-session': state.session.session_token
-          },
-          body: JSON.stringify(body),
-        });
-        const out = await r.json();
-        if (!r.ok) throw new Error(out.detail || 'Mint failed');
-        qs('mintResult').textContent = JSON.stringify(out, null, 2);
-        if (out.token_id) renderQR(out.token_id);
-      } catch(e) {
-        qs('mintResult').textContent = `Erreur: ${e.message}`;
-      }
-    }
-
-    /* --------------- Wiring UI --------------- */
-    document.addEventListener('DOMContentLoaded', () => {
-      // Base URL & session
-      qs('apiBase').value = state.baseUrl;
-      qs('apiBase').addEventListener('change', saveBase);
-      loadSessionUI();
-
-      // Boutons
-      qs('testBtn')   ?.addEventListener('click', testPublic);
-      qs('loadBtn')   ?.addEventListener('click', loadMyTokens);
-      qs('loginBtn')  ?.addEventListener('click', login);
-      qs('signupBtn') ?.addEventListener('click', signup);
-      qs('mintBtn')   ?.addEventListener('click', mintToken);
-      qs('refreshBtn')?.addEventListener('click', loadMyTokens);
-    });
-  </script>
+/* ============ Expose aux boutons HTML ============ */
+window.signup = signup
+window.login = login
+window.testPublicApi = testPublicApi
+window.loadMyTokens = loadMyTokens
+window.mintToken = mintToken
+window.copyShareLink = copyShareLink
+</script>
 </body>
 </html>
