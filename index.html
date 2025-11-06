@@ -413,5 +413,95 @@ document.addEventListener('DOMContentLoaded', ()=>{
   testPublicApi().catch(()=>{});
 });
 </script>
+  <script>
+(function () {
+  // === Sélecteurs ===
+  const apiInput     = document.getElementById('apiBase');
+  const statusPill   = document.getElementById('statusPill');
+  const testBtn      = document.getElementById('testBtn');
+  const loadBtn      = document.getElementById('loadBtn');
+
+  // === Helpers ===
+  function getApiBase() {
+    // 1) champ > 2) localStorage > 3) valeur par défaut
+    let v = (apiInput?.value || '').trim();
+    if (!v) v = (localStorage.getItem('fg_api_base') || '').trim();
+    if (!v) v = 'https://foodgoov.onrender.com';
+    // pas de slash final
+    if (v.endsWith('/')) v = v.slice(0, -1);
+    return v;
+  }
+  function setApiBase(v) {
+    if (!v) return;
+    v = v.trim();
+    if (v.endsWith('/')) v = v.slice(0, -1);
+    if (apiInput) apiInput.value = v;
+    localStorage.setItem('fg_api_base', v);
+  }
+  function setOnlineState(ok) {
+    if (!statusPill) return;
+    statusPill.textContent = ok ? 'En ligne' : 'Hors ligne';
+  }
+  async function ping() {
+    const base = getApiBase();
+    try {
+      const r = await fetch(base + '/v1/status', { cache: 'no-store' });
+      if (!r.ok) throw new Error('bad status');
+      const j = await r.json();
+      setOnlineState(true);
+      return j;
+    } catch (e) {
+      setOnlineState(false);
+      throw e;
+    }
+  }
+  function alertBox(msg) { alert(msg); }
+
+  // === Initialisation ===
+  // Remplir le champ avec la valeur mémorisée/défaut
+  setApiBase(getApiBase());
+
+  // Tester automatiquement au chargement
+  ping().catch(() => {
+    // ne bloque pas l’UI, on laisse juste "Hors ligne"
+  });
+
+  // Sauvegarder quand on change l’URL API
+  if (apiInput) {
+    apiInput.addEventListener('change', () => {
+      setApiBase(apiInput.value);
+      ping().catch(() => alertBox('API indisponible'));
+    });
+    apiInput.addEventListener('blur', () => {
+      setApiBase(apiInput.value);
+    });
+  }
+
+  // Bouton "Tester API publique"
+  if (testBtn) {
+    testBtn.addEventListener('click', async () => {
+      try {
+        await ping();
+        alertBox('API OK ✅');
+      } catch {
+        alertBox('API indisponible');
+      }
+    });
+  }
+
+  // Bouton "Charger mes tokens" — vérifie d’abord que l’API répond
+  if (loadBtn) {
+    loadBtn.addEventListener('click', async () => {
+      try {
+        await ping();
+        // ici on appelle ensuite ta fonction existante qui charge /v1/admin/my-tokens
+        // ex: loadMyTokens();
+      } catch {
+        alertBox('API indisponible');
+      }
+    });
+  }
+})();
+</script>
 </body>
 </html>
