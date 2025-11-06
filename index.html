@@ -172,266 +172,246 @@
 
   <!-- Script principal -->
 <script>
-/* ========= Helpers de base ========= */
-
+/* ====== Utilitaires & état ====== */
 const $ = (id) => document.getElementById(id);
 
-// Mémoire locale (dans la page) pour la session
-let SESSION = null; // { token, display_name, producer_id }
+const LS_BASE = "fg_api_base";
+const LS_SESS = "fg_session_token";
+const LS_NAME = "fg_session_name";
 
-// Lire et mémoriser l'API base URL depuis le champ (sans slash final)
-function getApiBase() {
-  let url = ($('#apiBase').value || '').trim();
-  if (url.endsWith('/')) url = url.slice(0, -1);
-  return url;
+let SESSION = null; // { token, display_name, producer_id, api_key }
+
+function getApiBase(){
+  let v = ($('#apiBase')?.value || '').trim();
+  if (v.endsWith('/')) v = v.slice(0,-1);
+  if (!v) throw new Error("API Base URL manquante");
+  return v;
 }
 
-// Met à jour l’affichage du statut (online/offline)
-function setStatus(online) {
+function setStatus(online){
   const pill = $('#statusPill');
+  if (!pill) return;
   pill.textContent = online ? 'En ligne' : 'Hors ligne';
 }
 
-// Met à jour le bloc Session
-function setSessionInfo() {
+function setSessionInfo(){
   const el = $('#sessionInfo');
-  if (!SESSION) {
-    el.textContent = '—';
-  } else {
-    const short = SESSION.token.slice(0, 12) + '…';
-    el.textContent = `${SESSION.display_name} • ${short}`;
-  }
+  if (!el) return;
+  if (!SESSION) { el.textContent = '—'; setStatus(false); return; }
+  const short = SESSION.token.slice(0,12) + '…';
+  el.textContent = `${SESSION.display_name} • ${short}`;
+  setStatus(true);
 }
 
-/* ========= Appels API ========= */
-
-async function apiGET(path, opts = {}) {
-  const base = getApiBase();
-  const headers = Object.assign({}, opts.headers || {});
-  if (SESSION?.token) headers['x-session'] = SESSION.token;
-  const res = await fetch(base + path, {
-    method: 'GET',
-    headers
-  });
-  return res;
+function saveBaseFromInput(){
+  const base = ($('#apiBase')?.value || '').trim();
+  localStorage.setItem(LS_BASE, base);
 }
 
-async function apiPOST(path, body, opts = {}) {
+/* ====== HTTP helpers ====== */
+async function apiGET(path){
   const base = getApiBase();
-  const headers = Object.assign(
-    { 'content-type': 'application/json' },
-    opts.headers || {}
-  );
+  const headers = {};
   if (SESSION?.token) headers['x-session'] = SESSION.token;
-  const res = await fetch(base + path, {
+  const r = await fetch(base + path, { method: 'GET', headers });
+  return r;
+}
+
+async function apiPOST(path, body){
+  const base = getApiBase();
+  const headers = { 'Content-Type': 'application/json' };
+  if (SESSION?.token) headers['x-session'] = SESSION.token;
+  const r = await fetch(base + path, {
     method: 'POST',
     headers,
-    body: JSON.stringify(body)
+    body: JSON.stringify(body || {})
   });
-  return res;
+  return r;
 }
 
-/* ========= Actions ========= */
+/* ====== Actions ====== */
 
-// A. Tester API publique
-async function testPublicApi() {
-  try {
+// A) API publique
+async function testPublicApi(){
+  try{
     const r = await apiGET('/v1/status');
-    setStatus(r.ok);
     const j = await r.json();
-    alert(`Status: ${j.status}\nMessage: ${j.message || ''}`);
-  } catch (e) {
+    setStatus(r.ok);
+    alert(`Status: ${j.status} • ${j.message || ''}`);
+  }catch(e){
     setStatus(false);
-    alert('API indisponible.');
+    alert('API indisponible');
   }
 }
 
-// B. Connexion
-async function login() {
-  const email = ($('#loginEmail').value || '').trim();
-  const password = $('#loginPassword').value || '';
+// B) Connexion
+async function login(){
+  const email = ($('#loginEmail')?.value || '').trim().toLowerCase();
+  const password = $('#loginPassword')?.value || '';
   if (!email || !password) return alert('Email et mot de passe requis.');
-
-  try {
+  try{
+    saveBaseFromInput();
     const r = await apiPOST('/v1/auth/login', { email, password });
     const j = await r.json();
     if (!r.ok) return alert(j.detail || 'Login échoué');
-
-    SESSION = {
-      token: j.session_token,             // fgsess_…
-      display_name: j.display_name,
-      producer_id: j.producer_id,
-      api_key: j.api_key
-    };
-    setSessionInfo();
-    alert(`Connecté : ${j.display_name}`);
-  } catch (e) {
-    alert('Erreur réseau pendant la connexion.');
-  }
-}
-
-// C. Création de compte
-async function signup() {
-  const display_name = ($('#signupDisplay').value || '').trim();
-  const email = ($('#signupEmail').value || '').trim();
-  const password = $('#signupPassword').value || '';
-  if (!display_name || !email || !password) {
-    return alert('Nom, email et mot de passe sont requis.');
-  }
-  try {
-    const r = await apiPOST('/v1/auth/signup', { display_name, email, password });
-    const j = await r.json();
-    if (!r.ok) return alert(j.detail || 'Création échouée');
-
     SESSION = {
       token: j.session_token,
       display_name: j.display_name,
       producer_id: j.producer_id,
       api_key: j.api_key
     };
+    // persiste
+    localStorage.setItem(LS_SESS, SESSION.token);
+    localStorage.setItem(LS_NAME, SESSION.display_name || '');
     setSessionInfo();
-    alert(`Compte créé : ${j.display_name}`);
-  } catch (e) {
-    alert('Erreur réseau pendant la création de compte.');
+    alert('Connecté');
+  }catch(e){
+    alert('Erreur réseau pendant la connexion');
   }
 }
 
-// D. Charger mes tokens
-async function loadMyTokens() {
-  const limit = parseInt($('#listLimit').value || '25', 10);
-  const offset = parseInt($('#listOffset').value || '0', 10);
-  const out = $('#tokensList');
-  out.textContent = 'Chargement…';
+// C) Création compte
+async function signup(){
+  const display_name = ($('#signupDisplay')?.value || '').trim();
+  const email = ($('#signupEmail')?.value || '').trim().toLowerCase();
+  const password = $('#signupPassword')?.value || '';
+  if (!display_name || !email || !password) return alert('Champs requis manquants.');
+  try{
+    saveBaseFromInput();
+    const r = await apiPOST('/v1/auth/signup', { display_name, email, password });
+    const j = await r.json();
+    if (!r.ok) return alert(j.detail || 'Création échouée');
+    SESSION = {
+      token: j.session_token,
+      display_name: j.display_name,
+      producer_id: j.producer_id,
+      api_key: j.api_key
+    };
+    localStorage.setItem(LS_SESS, SESSION.token);
+    localStorage.setItem(LS_NAME, SESSION.display_name || '');
+    setSessionInfo();
+    alert('Compte créé');
+  }catch(e){
+    alert('Erreur réseau pendant la création du compte');
+  }
+}
 
-  try {
+// D) Mes tokens
+async function loadMyTokens(){
+  const out = $('#tokensList');
+  if (out) out.textContent = 'Chargement…';
+  try{
+    const limit  = parseInt($('#listLimit')?.value || '25', 10);
+    const offset = parseInt($('#listOffset')?.value || '0', 10);
     const r = await apiGET(`/v1/admin/my-tokens?limit=${limit}&offset=${offset}`);
     const j = await r.json();
-    if (!r.ok) {
-      out.textContent = `Erreur: ${j.detail || 'Load failed'}`;
+    if (!r.ok){
+      out.textContent = 'Erreur: ' + (j.detail || 'Load failed');
       return;
     }
-    if (!j.items || j.items.length === 0) {
+    if (!j.items?.length){
       out.textContent = 'Aucun lot.';
       return;
     }
-    // Affichage simple
-    out.innerHTML = j.items.map(t => {
+    out.innerHTML = j.items.map(t=>{
       const q = `${t.quantity.count} ${t.quantity.unit}`;
-      const when = (t.issued_at || '').replace('T', ' ').replace('Z', '');
+      const when = (t.issued_at || '').replace('T',' ').replace('Z','');
       return `<div class="mb-2">
         <div class="font-semibold">${t.domain_id} • ${t.batch_code}</div>
         <div class="text-[11px] text-gray-400">${t.token_id}</div>
         <div class="text-[11px] text-gray-400">${when} • ${q}</div>
       </div>`;
     }).join('');
-  } catch (e) {
-    $('#tokensList').textContent = 'Erreur réseau.';
+  }catch(e){
+    if (out) out.textContent = 'Erreur réseau';
   }
 }
 
-// E. Mint token
-async function mintToken() {
-  const bodyRaw = $('#mintBody').value;
-  const out = $('#mintResult');
-  out.textContent = '';
+// E) Mint token
+async function mintToken(){
+  const out = $('#mintResult'); if (out) out.textContent = '';
   let payload;
-  try {
-    payload = JSON.parse(bodyRaw);
-  } catch (e) {
-    return alert('JSON invalide dans le bloc Mint.');
-  }
-  try {
+  try{
+    payload = JSON.parse($('#mintBody')?.value || '{}');
+  }catch{ return alert('JSON invalide dans le bloc Mint'); }
+
+  try{
     const r = await apiPOST('/v1/tokens', payload);
     const j = await r.json();
-    if (!r.ok) {
-      out.textContent = 'Erreur: ' + (j.detail || 'Load failed');
+    if (!r.ok){
+      out.textContent = 'Erreur: ' + (j.detail || r.status);
       return;
     }
-    out.textContent = `✅ Token créé : ${j.token_id}`;
-    // QR
-    renderQR(j.token_id);
-    // Lien partage
-    const link = `https://foodgoov-dashboard.onrender.com/verify.html?token_id=${j.token_id}`;
+    out.textContent = '✅ Token créé : ' + j.token_id;
+
+    // QR & partage
+    const link = j.qr_url || (`https://foodgoov-dashboard.onrender.com/verify.html?token_id=${j.token_id}`);
+    renderQR(link);
     $('#shareLink').textContent = link;
     $('#qrSection').classList.remove('hidden');
-  } catch (e) {
-    out.textContent = 'Erreur réseau.';
+  }catch(e){
+    out.textContent = 'Erreur réseau';
   }
 }
 
-// F. Générer le QR
-function renderQR(tokenId) {
-  const canvas = $('#qrCanvas');
-  const url = `https://foodgoov-dashboard.onrender.com/verify.html?token_id=${tokenId}`;
-  // La lib QRCode est chargée depuis le CDN <script src=".../qrcode.min.js">
+// F) QR & partage (utilise la lib QRCode incluse dans le <head>)
+function renderQR(url){
+  const container = $('#qrCanvas');
+  if (!container) return;
+  // reset
+  container.innerHTML = '';
   if (window.QRCode) {
-    const qr = new QRCode(canvas, { width: 200, height: 200 });
-    // La lib selon versions accepte canvas, ou il faut appeler makeCode sur un élément DOM.
-    // Astuce robuste :
-    canvas.innerHTML = '';                 // reset éventuel
-    new QRCode(canvas, { text: url, width: 200, height: 200 });
+    new QRCode(container, { text: url, width: 220, height: 220 });
   } else {
-    // fallback
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#999';
-    ctx.fillRect(0,0,200,200);
-    ctx.fillStyle = '#000';
-    ctx.fillText('QR lib absente', 40, 100);
+    const p = document.createElement('p');
+    p.className = 'text-sm text-gray-400';
+    p.textContent = url;
+    container.appendChild(p);
   }
 }
 
-// G. Copier le lien de partage
-async function copyShareLink() {
-  const text = ($('#shareLink').textContent || '').trim();
-  if (!text) return;
-  try {
-    await navigator.clipboard.writeText(text);
-    alert('Lien copié dans le presse-papier.');
-  } catch {
-    alert('Impossible de copier (permissions navigateur).');
-  }
+async function copyShareLink(){
+  const url = ($('#shareLink')?.textContent || '').trim();
+  if (!url) return;
+  try{
+    await navigator.clipboard.writeText(url);
+    alert('Lien copié');
+  }catch{ alert('Impossible de copier'); }
 }
 
-/* ========= Branchement des boutons ========= */
+/* ====== Câblage des boutons ====== */
+document.addEventListener('DOMContentLoaded', ()=>{
+  // Base URL depuis le storage (si présent)
+  const saved = localStorage.getItem(LS_BASE);
+  if (saved && $('#apiBase')) $('#apiBase').value = saved;
+  $('#apiBase')?.addEventListener('change', saveBaseFromInput);
 
-document.addEventListener('DOMContentLoaded', () => {
-  // Statut initial : tentons un ping
-  testPublicApi().catch(() => {});
+  // Restaurer session (si présente)
+  const tok  = localStorage.getItem(LS_SESS);
+  const name = localStorage.getItem(LS_NAME);
+  if (tok){
+    SESSION = { token: tok, display_name: name || 'Compte', producer_id: '', api_key: '' };
+    setSessionInfo();
+  } else {
+    setSessionInfo();
+  }
 
-  const wiring = [
-    ['testBtn',    testPublicApi],
-    ['loadBtn',    loadMyTokens],
-    ['refreshBtn', loadMyTokens],
-    ['loginBtn',   login],
-    ['signupBtn',  signup],
-    ['mintBtn',    mintToken],
-    ['shareBtn',   copyShareLink],
-  ];
-  wiring.forEach(([id, fn]) => {
+  // Brancher les clics (IDs qui existent dans TON HTML)
+  [['testBtn', testPublicApi],
+   ['loadBtn', loadMyTokens],
+   ['refreshBtn', loadMyTokens],
+   ['loginBtn', login],
+   ['signupBtn', signup],
+   ['mintBtn', mintToken],
+   ['shareBtn', copyShareLink]
+  ].forEach(([id, fn])=>{
     const el = $(id);
     if (el && typeof fn === 'function') el.addEventListener('click', fn);
   });
 
-  // Restaure éventuellement l’API Base URL enregistrée (si tu utilises localStorage plus tard)
-  setSessionInfo();
+  // Ping initial (facultatif)
+  testPublicApi().catch(()=>{});
 });
-</script>
-  <script>
-/* 🔔 Smoke test minimal : prouve que le JS s'exécute et que les boutons existent */
-alert("✅ JS bien chargé (smoke test)");
-
-const ids = ["testBtn","loadBtn","refreshBtn","loginBtn","signupBtn","mintBtn","shareBtn","apiBase"];
-const missing = ids.filter(id => !document.getElementById(id));
-if (missing.length) {
-  alert("⚠️ Éléments introuvables: " + missing.join(", "));
-} else {
-  alert("👍 Tous les éléments clés ont été trouvés");
-}
-
-/* Branche trois clics de test (suffisant pour valider que ça marche) */
-document.getElementById("testBtn")   ?.addEventListener("click", () => alert("✅ Click TEST OK"));
-document.getElementById("loginBtn")  ?.addEventListener("click", () => alert("✅ Click LOGIN OK"));
-document.getElementById("mintBtn")   ?.addEventListener("click", () => alert("✅ Click MINT OK"));
 </script>
 </body>
 </html>
