@@ -172,388 +172,202 @@
 
   <!-- Script principal -->
 <script>
-/* ====== Utilitaires & état ====== */
-const $ = (id) => document.getElementById(id);
-
-const LS_BASE = "fg_api_base";
-const LS_SESS = "fg_session_token";
-const LS_NAME = "fg_session_name";
-
-let SESSION = null; // { token, display_name, producer_id, api_key }
-
-function getApiBase(){
-  let v = ($('#apiBase')?.value || '').trim();
-  if (v.endsWith('/')) v = v.slice(0,-1);
-  if (!v) throw new Error("API Base URL manquante");
-  return v;
-}
-
-function setStatus(online){
-  const pill = $('#statusPill');
-  if (!pill) return;
-  pill.textContent = online ? 'En ligne' : 'Hors ligne';
-}
-
-function setSessionInfo(){
-  const el = $('#sessionInfo');
-  if (!el) return;
-  if (!SESSION) { el.textContent = '—'; setStatus(false); return; }
-  const short = SESSION.token.slice(0,12) + '…';
-  el.textContent = `${SESSION.display_name} • ${short}`;
-  setStatus(true);
-}
-
-function saveBaseFromInput(){
-  const base = ($('#apiBase')?.value || '').trim();
-  localStorage.setItem(LS_BASE, base);
-}
-
-/* ====== HTTP helpers ====== */
-async function apiGET(path){
-  const base = getApiBase();
-  const headers = {};
-  if (SESSION?.token) headers['x-session'] = SESSION.token;
-  const r = await fetch(base + path, { method: 'GET', headers });
-  return r;
-}
-
-async function apiPOST(path, body){
-  const base = getApiBase();
-  const headers = { 'Content-Type': 'application/json' };
-  if (SESSION?.token) headers['x-session'] = SESSION.token;
-  const r = await fetch(base + path, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body || {})
-  });
-  return r;
-}
-
-/* ====== Actions ====== */
-
-// A) API publique
-async function testPublicApi(){
-  try{
-    const r = await apiGET('/v1/status');
-    const j = await r.json();
-    setStatus(r.ok);
-    alert(`Status: ${j.status} • ${j.message || ''}`);
-  }catch(e){
-    setStatus(false);
-    alert('API indisponible');
-  }
-}
-
-// B) Connexion
-async function login(){
-  const email = ($('#loginEmail')?.value || '').trim().toLowerCase();
-  const password = $('#loginPassword')?.value || '';
-  if (!email || !password) return alert('Email et mot de passe requis.');
-  try{
-    saveBaseFromInput();
-    const r = await apiPOST('/v1/auth/login', { email, password });
-    const j = await r.json();
-    if (!r.ok) return alert(j.detail || 'Login échoué');
-    SESSION = {
-      token: j.session_token,
-      display_name: j.display_name,
-      producer_id: j.producer_id,
-      api_key: j.api_key
-    };
-    // persiste
-    localStorage.setItem(LS_SESS, SESSION.token);
-    localStorage.setItem(LS_NAME, SESSION.display_name || '');
-    setSessionInfo();
-    alert('Connecté');
-  }catch(e){
-    alert('Erreur réseau pendant la connexion');
-  }
-}
-
-// C) Création compte
-async function signup(){
-  const display_name = ($('#signupDisplay')?.value || '').trim();
-  const email = ($('#signupEmail')?.value || '').trim().toLowerCase();
-  const password = $('#signupPassword')?.value || '';
-  if (!display_name || !email || !password) return alert('Champs requis manquants.');
-  try{
-    saveBaseFromInput();
-    const r = await apiPOST('/v1/auth/signup', { display_name, email, password });
-    const j = await r.json();
-    if (!r.ok) return alert(j.detail || 'Création échouée');
-    SESSION = {
-      token: j.session_token,
-      display_name: j.display_name,
-      producer_id: j.producer_id,
-      api_key: j.api_key
-    };
-    localStorage.setItem(LS_SESS, SESSION.token);
-    localStorage.setItem(LS_NAME, SESSION.display_name || '');
-    setSessionInfo();
-    alert('Compte créé');
-  }catch(e){
-    alert('Erreur réseau pendant la création du compte');
-  }
-}
-
-// D) Mes tokens
-async function loadMyTokens(){
-  const out = $('#tokensList');
-  if (out) out.textContent = 'Chargement…';
-  try{
-    const limit  = parseInt($('#listLimit')?.value || '25', 10);
-    const offset = parseInt($('#listOffset')?.value || '0', 10);
-    const r = await apiGET(`/v1/admin/my-tokens?limit=${limit}&offset=${offset}`);
-    const j = await r.json();
-    if (!r.ok){
-      out.textContent = 'Erreur: ' + (j.detail || 'Load failed');
-      return;
-    }
-    if (!j.items?.length){
-      out.textContent = 'Aucun lot.';
-      return;
-    }
-    out.innerHTML = j.items.map(t=>{
-      const q = `${t.quantity.count} ${t.quantity.unit}`;
-      const when = (t.issued_at || '').replace('T',' ').replace('Z','');
-      return `<div class="mb-2">
-        <div class="font-semibold">${t.domain_id} • ${t.batch_code}</div>
-        <div class="text-[11px] text-gray-400">${t.token_id}</div>
-        <div class="text-[11px] text-gray-400">${when} • ${q}</div>
-      </div>`;
-    }).join('');
-  }catch(e){
-    if (out) out.textContent = 'Erreur réseau';
-  }
-}
-
-// E) Mint token
-async function mintToken(){
-  const out = $('#mintResult'); if (out) out.textContent = '';
-  let payload;
-  try{
-    payload = JSON.parse($('#mintBody')?.value || '{}');
-  }catch{ return alert('JSON invalide dans le bloc Mint'); }
-
-  try{
-    const r = await apiPOST('/v1/tokens', payload);
-    const j = await r.json();
-    if (!r.ok){
-      out.textContent = 'Erreur: ' + (j.detail || r.status);
-      return;
-    }
-    out.textContent = '✅ Token créé : ' + j.token_id;
-
-    // QR & partage
-    const link = j.qr_url || (`https://foodgoov-dashboard.onrender.com/verify.html?token_id=${j.token_id}`);
-    renderQR(link);
-    $('#shareLink').textContent = link;
-    $('#qrSection').classList.remove('hidden');
-  }catch(e){
-    out.textContent = 'Erreur réseau';
-  }
-}
-
-// F) QR & partage (utilise la lib QRCode incluse dans le <head>)
-function renderQR(url){
-  const container = $('#qrCanvas');
-  if (!container) return;
-  // reset
-  container.innerHTML = '';
-  if (window.QRCode) {
-    new QRCode(container, { text: url, width: 220, height: 220 });
-  } else {
-    const p = document.createElement('p');
-    p.className = 'text-sm text-gray-400';
-    p.textContent = url;
-    container.appendChild(p);
-  }
-}
-
-async function copyShareLink(){
-  const url = ($('#shareLink')?.textContent || '').trim();
-  if (!url) return;
-  try{
-    await navigator.clipboard.writeText(url);
-    alert('Lien copié');
-  }catch{ alert('Impossible de copier'); }
-}
-
-/* ====== Câblage des boutons ====== */
-document.addEventListener('DOMContentLoaded', ()=>{
-  // Base URL depuis le storage (si présent)
-  const saved = localStorage.getItem(LS_BASE);
-  if (saved && $('#apiBase')) $('#apiBase').value = saved;
-  $('#apiBase')?.addEventListener('change', saveBaseFromInput);
-
-  // Restaurer session (si présente)
-  const tok  = localStorage.getItem(LS_SESS);
-  const name = localStorage.getItem(LS_NAME);
-  if (tok){
-    SESSION = { token: tok, display_name: name || 'Compte', producer_id: '', api_key: '' };
-    setSessionInfo();
-  } else {
-    setSessionInfo();
-  }
-
-  // Brancher les clics (IDs qui existent dans TON HTML)
-  [['testBtn', testPublicApi],
-   ['loadBtn', loadMyTokens],
-   ['refreshBtn', loadMyTokens],
-   ['loginBtn', login],
-   ['signupBtn', signup],
-   ['mintBtn', mintToken],
-   ['shareBtn', copyShareLink]
-  ].forEach(([id, fn])=>{
-    const el = $(id);
-    if (el && typeof fn === 'function') el.addEventListener('click', fn);
-  });
-
-  // Ping initial (facultatif)
-  testPublicApi().catch(()=>{});
-});
-</script>
-  <script>
 (function () {
-  // === Sélecteurs ===
-  const apiInput     = document.getElementById('apiBase');
-  const statusPill   = document.getElementById('statusPill');
-  const testBtn      = document.getElementById('testBtn');
-  const loadBtn      = document.getElementById('loadBtn');
+  // ------- helpers UI -------
+  const $ = (id) => document.getElementById(id);
+  const apiInput     = $("apiBase");
+  const statusPill   = $("statusPill");
+  const testBtn      = $("testBtn");
+  const loadBtn      = $("loadBtn");
+  const refreshBtn   = $("refreshBtn");
+  const listLimit    = $("listLimit");
+  const listOffset   = $("listOffset");
+  const tokensList   = $("tokensList");
+  const loginEmail   = $("loginEmail");
+  const loginPass    = $("loginPassword");
+  const loginBtn     = $("loginBtn");
+  const signupDisplay= $("signupDisplay");
+  const signupEmail  = $("signupEmail");
+  const signupPass   = $("signupPassword");
+  const signupBtn    = $("signupBtn");
+  const mintBodyEl   = $("mintBody");
+  const mintBtn      = $("mintBtn");
+  const mintResult   = $("mintResult");
+  const sessionInfo  = $("sessionInfo");
+  const qrSection    = $("qrSection");
+  const qrCanvas     = $("qrCanvas");
+  const shareBtn     = $("shareBtn");
+  const shareLink    = $("shareLink");
 
-  // === Helpers ===
+  // ------- persistence -------
   function getApiBase() {
-    // 1) champ > 2) localStorage > 3) valeur par défaut
-    let v = (apiInput?.value || '').trim();
-    if (!v) v = (localStorage.getItem('fg_api_base') || '').trim();
-    if (!v) v = 'https://foodgoov.onrender.com';
-    // pas de slash final
-    if (v.endsWith('/')) v = v.slice(0, -1);
+    let v = (apiInput?.value || "").trim();
+    if (!v) try { v = localStorage.getItem("fg_api_base") || ""; } catch {}
+    v = v.replace(/\/+$/, ""); // retire slash final
+    if (apiInput) apiInput.value = v;
+    try { localStorage.setItem("fg_api_base", v); } catch {}
     return v;
   }
-  function setApiBase(v) {
-    if (!v) return;
-    v = v.trim();
-    if (v.endsWith('/')) v = v.slice(0, -1);
-    if (apiInput) apiInput.value = v;
-    localStorage.setItem('fg_api_base', v);
+  if (apiInput && !apiInput.value) {
+    try { apiInput.value = localStorage.getItem("fg_api_base") || "https://foodgoov.onrender.com"; } catch {}
   }
-  function setOnlineState(ok) {
+  apiInput?.addEventListener("change", getApiBase);
+
+  function setStatus(ok) {
     if (!statusPill) return;
-    statusPill.textContent = ok ? 'En ligne' : 'Hors ligne';
+    statusPill.textContent = ok ? "En ligne" : "Hors ligne";
   }
+  function alertMsg(msg){ window.alert(msg); }
+
+  // ------- session token en mémoire -------
+  let SESSION = null; // {producer_id, display_name, session_token, api_key}
+  try {
+    const raw = localStorage.getItem("fg_session");
+    if (raw) SESSION = JSON.parse(raw);
+  } catch {}
+
+  function saveSession(s) {
+    SESSION = s;
+    try { localStorage.setItem("fg_session", JSON.stringify(s)); } catch {}
+    if (sessionInfo) {
+      sessionInfo.textContent = s ? (s.display_name + " · " + s.session_token.slice(0, 8) + "…") : "—";
+    }
+  }
+  saveSession(SESSION); // reflète l’état au chargement
+
+  // ------- appels API -------
   async function ping() {
     const base = getApiBase();
     try {
-      const r = await fetch(base + '/v1/status', { cache: 'no-store' });
-      if (!r.ok) throw new Error('bad status');
-      const j = await r.json();
-      setOnlineState(true);
-      return j;
+      const r = await fetch(base + "/v1/status", { method: "GET", mode: "cors", cache: "no-store" });
+      if (!r.ok) throw new Error("HTTP " + r.status + " " + (await r.text()));
+      setStatus(true);
+      return true;
     } catch (e) {
-      setOnlineState(false);
-      throw e;
+      setStatus(false);
+      alertMsg("API indisponible\n\n" + (e.message || e));
+      return false;
     }
   }
-  function alertBox(msg) { alert(msg); }
 
-  // === Initialisation ===
-  // Remplir le champ avec la valeur mémorisée/défaut
-  setApiBase(getApiBase());
+  async function doLogin() {
+    const base = getApiBase();
+    const email = (loginEmail?.value || "").trim().toLowerCase();
+    const pw    = (loginPass?.value || "");
+    if (!email || !pw) { alertMsg("Email et mot de passe requis."); return; }
+    const ok = await ping(); if (!ok) return;
 
-  // Tester automatiquement au chargement
-  ping().catch(() => {
-    // ne bloque pas l’UI, on laisse juste "Hors ligne"
-  });
-
-  // Sauvegarder quand on change l’URL API
-  if (apiInput) {
-    apiInput.addEventListener('change', () => {
-      setApiBase(apiInput.value);
-      ping().catch(() => alertBox('API indisponible'));
-    });
-    apiInput.addEventListener('blur', () => {
-      setApiBase(apiInput.value);
-    });
-  }
-
-  // Bouton "Tester API publique"
-  if (testBtn) {
-    testBtn.addEventListener('click', async () => {
-      try {
-        await ping();
-        alertBox('API OK ✅');
-      } catch {
-        alertBox('API indisponible');
-      }
-    });
-  }
-
-  // Bouton "Charger mes tokens" — vérifie d’abord que l’API répond
-  if (loadBtn) {
-    loadBtn.addEventListener('click', async () => {
-      try {
-        await ping();
-        // ici on appelle ensuite ta fonction existante qui charge /v1/admin/my-tokens
-        // ex: loadMyTokens();
-      } catch {
-        alertBox('API indisponible');
-      }
-    });
-  }
-})();
-</script>
-  <script>
-/**
- * BYPASS TEMPORAIRE : force l'URL API et logge l'erreur exacte.
- * À retirer quand tout est stable.
- */
-(function () {
-  const FORCED_API = "https://foodgoov.onrender.com"; // <= URL exacte SANS slash final
-  const apiInput   = document.getElementById("apiBase");
-  const statusPill = document.getElementById("statusPill");
-  const testBtn    = document.getElementById("testBtn");
-
-  // force l'URL dans l'UI + localStorage
-  if (apiInput) apiInput.value = FORCED_API;
-  try { localStorage.setItem("fg_api_base", FORCED_API); } catch {}
-
-  function setOnline(ok){ if(statusPill){ statusPill.textContent = ok ? "En ligne" : "Hors ligne"; } }
-
-  async function ping() {
     try {
-      const r = await fetch(FORCED_API + "/v1/status", {
-        method: "GET",
-        mode: "cors",
-        cache: "no-store",
-        headers: { "Accept": "application/json" },
+      const r = await fetch(base + "/v1/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password: pw })
       });
-      if (!r.ok) {
-        const txt = await r.text().catch(()=>String(r.status));
-        throw new Error("HTTP " + r.status + " — " + txt);
-      }
-      setOnline(true);
-      return await r.json();
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
+      // attend { producer_id, api_key, session_token, display_name }
+      saveSession(data);
+      alertMsg("Connecté : " + data.display_name);
     } catch (e) {
-      setOnline(false);
-      alert("API indisponible\n\nDétail: " + (e && e.message ? e.message : e));
-      console.error("[PING ERROR]", e);
-      throw e;
+      alertMsg("Connexion échouée : " + (e.message || e));
     }
   }
 
-  // test auto au chargement
-  ping().catch(()=>{ /* l’alerte a déjà été affichée */ });
+  async function doSignup() {
+    const base = getApiBase();
+    const display = (signupDisplay?.value || "").trim();
+    const email   = (signupEmail?.value || "").trim().toLowerCase();
+    const pw      = (signupPass?.value || "");
+    if (!display || !email || !pw) { alertMsg("Tous les champs sont requis."); return; }
+    const ok = await ping(); if (!ok) return;
 
-  // bouton “Tester API publique”
-  if (testBtn) {
-    testBtn.addEventListener("click", () => {
-      ping().then(()=>alert("API OK ✅")).catch(()=>{});
-    });
+    try {
+      const r = await fetch(base + "/v1/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ display_name: display, email, password: pw })
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
+      saveSession(data);
+      alertMsg("Compte créé : " + data.display_name);
+    } catch (e) {
+      alertMsg("Création échouée : " + (e.message || e));
+    }
   }
 
-  // expose pour les autres scripts (s’ils lisent window.API_BASE)
-  window.API_BASE = FORCED_API;
+  async function loadMyTokens() {
+    const base = getApiBase();
+    const ok = await ping(); if (!ok) return;
+    if (!SESSION?.session_token) { alertMsg("Connecte-toi d’abord."); return; }
+
+    const lim = parseInt(listLimit?.value || "25", 10) || 25;
+    const off = parseInt(listOffset?.value || "0", 10) || 0;
+
+    try {
+      const r = await fetch(`${base}/v1/admin/my-tokens?limit=${lim}&offset=${off}`, {
+        method: "GET",
+        headers: { "x-session": SESSION.session_token }
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
+      const items = data.items || [];
+      tokensList.innerHTML = items.length
+        ? items.map(t => `• <code>${t.token_id}</code> — ${t.category} / ${t.domain_id} / ${t.vintage_year} (${t.quantity.count} ${t.quantity.unit})`).join("<br>")
+        : "—";
+    } catch (e) {
+      tokensList.innerHTML = "Erreur: " + (e.message || e);
+    }
+  }
+
+  async function doMint() {
+    const base = getApiBase();
+    const ok = await ping(); if (!ok) return;
+    if (!SESSION?.session_token) { alertMsg("Connecte-toi d’abord."); return; }
+
+    let payload;
+    try { payload = JSON.parse(mintBodyEl.value); }
+    catch { alertMsg("JSON invalide dans la zone Mint."); return; }
+
+    try {
+      const r = await fetch(base + "/v1/tokens", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-session": SESSION.session_token
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
+      mintResult.textContent = "OK: " + JSON.stringify(data);
+      // QR + partage
+      if (window.QRCode && data.token_id) {
+        qrSection?.classList.remove("hidden");
+        QRCode.toCanvas(qrCanvas, data.qr_url || (location.origin + "/verify.html?token_id=" + data.token_id));
+        shareLink.textContent = data.qr_url || (location.origin + "/verify.html?token_id=" + data.token_id);
+        shareBtn.onclick = async () => {
+          try {
+            await navigator.clipboard.writeText(shareLink.textContent);
+            alertMsg("Lien copié !");
+          } catch { alertMsg("Copie impossible."); }
+        };
+      }
+    } catch (e) {
+      mintResult.textContent = "Erreur: " + (e.message || e);
+    }
+  }
+
+  // ------- bind des boutons -------
+  testBtn    && (testBtn.onclick    = () => ping().then(ok => ok && alertMsg("API OK ✅")));
+  loadBtn    && (loadBtn.onclick    = loadMyTokens);
+  refreshBtn && (refreshBtn.onclick = loadMyTokens);
+  loginBtn   && (loginBtn.onclick   = doLogin);
+  signupBtn  && (signupBtn.onclick  = doSignup);
+  mintBtn    && (mintBtn.onclick    = doMint);
+
+  // Ping auto au chargement
+  ping();
 })();
 </script>
 </body>
