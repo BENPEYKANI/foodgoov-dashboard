@@ -503,5 +503,58 @@ document.addEventListener('DOMContentLoaded', ()=>{
   }
 })();
 </script>
+  <script>
+/**
+ * BYPASS TEMPORAIRE : force l'URL API et logge l'erreur exacte.
+ * À retirer quand tout est stable.
+ */
+(function () {
+  const FORCED_API = "https://foodgoov.onrender.com"; // <= URL exacte SANS slash final
+  const apiInput   = document.getElementById("apiBase");
+  const statusPill = document.getElementById("statusPill");
+  const testBtn    = document.getElementById("testBtn");
+
+  // force l'URL dans l'UI + localStorage
+  if (apiInput) apiInput.value = FORCED_API;
+  try { localStorage.setItem("fg_api_base", FORCED_API); } catch {}
+
+  function setOnline(ok){ if(statusPill){ statusPill.textContent = ok ? "En ligne" : "Hors ligne"; } }
+
+  async function ping() {
+    try {
+      const r = await fetch(FORCED_API + "/v1/status", {
+        method: "GET",
+        mode: "cors",
+        cache: "no-store",
+        headers: { "Accept": "application/json" },
+      });
+      if (!r.ok) {
+        const txt = await r.text().catch(()=>String(r.status));
+        throw new Error("HTTP " + r.status + " — " + txt);
+      }
+      setOnline(true);
+      return await r.json();
+    } catch (e) {
+      setOnline(false);
+      alert("API indisponible\n\nDétail: " + (e && e.message ? e.message : e));
+      console.error("[PING ERROR]", e);
+      throw e;
+    }
+  }
+
+  // test auto au chargement
+  ping().catch(()=>{ /* l’alerte a déjà été affichée */ });
+
+  // bouton “Tester API publique”
+  if (testBtn) {
+    testBtn.addEventListener("click", () => {
+      ping().then(()=>alert("API OK ✅")).catch(()=>{});
+    });
+  }
+
+  // expose pour les autres scripts (s’ils lisent window.API_BASE)
+  window.API_BASE = FORCED_API;
+})();
+</script>
 </body>
 </html>
