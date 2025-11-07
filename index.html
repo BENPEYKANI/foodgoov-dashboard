@@ -321,42 +321,62 @@
   }
 
   async function doMint() {
-    const base = getApiBase();
-    const ok = await ping(); if (!ok) return;
-    if (!SESSION?.session_token) { alertMsg("Connecte-toi d’abord."); return; }
+  const base = (document.getElementById('apiBase').value || '').trim().replace(/\/+$/, '');
+  const out = document.getElementById('mintResult');
+  out.textContent = '';
+  if (!base) { alert('API Base URL manquante'); return; }
 
-    let payload;
-    try { payload = JSON.parse(mintBodyEl.value); }
-    catch { alertMsg("JSON invalide dans la zone Mint."); return; }
+  // ✅ récupère la session depuis le stockage local
+  let sess = null;
+  try {
+    const raw = localStorage.getItem('fg_session');
+    if (raw) sess = JSON.parse(raw);
+  } catch {}
+  const token = sess?.session_token;
+  if (!token) { alert('Connecte-toi d’abord'); return; }
 
-    try {
-      const r = await fetch(base + "/v1/tokens", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-session": SESSION.session_token
-        },
-        body: JSON.stringify(payload)
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
-      mintResult.textContent = "OK: " + JSON.stringify(data);
-      // QR + partage
-      if (window.QRCode && data.token_id) {
-        qrSection?.classList.remove("hidden");
-        QRCode.toCanvas(qrCanvas, data.qr_url || (location.origin + "/verify.html?token_id=" + data.token_id));
-        shareLink.textContent = data.qr_url || (location.origin + "/verify.html?token_id=" + data.token_id);
-        shareBtn.onclick = async () => {
-          try {
-            await navigator.clipboard.writeText(shareLink.textContent);
-            alertMsg("Lien copié !");
-          } catch { alertMsg("Copie impossible."); }
-        };
-      }
-    } catch (e) {
-      mintResult.textContent = "Erreur: " + (e.message || e);
+  // ✅ prépare le JSON du token
+  let payload;
+  try { payload = JSON.parse(document.getElementById('mintBody').value); }
+  catch { alert('JSON invalide dans le bloc Mint'); return; }
+
+  try {
+    const r = await fetch(base + '/v1/tokens', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-session': token
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const text = await r.text();
+    let data = {};
+    try { data = JSON.parse(text); } catch { data = { detail: text }; }
+
+    if (!r.ok) {
+      out.textContent = `❌ ${r.status} — ${data.detail || text}`;
+      alert(`Mint échoué:\n${r.status} — ${data.detail || text}`);
+      return;
     }
+
+    // ✅ Succès
+    out.textContent = `✅ Token créé: ${data.token_id}`;
+    const link = data.qr_url || (`https://foodgoov-dashboard.onrender.com/verify.html?token_id=${data.token_id}`);
+
+    document.getElementById('qrSection').classList.remove('hidden');
+    document.getElementById('shareLink').textContent = link;
+
+    if (window.QRCode) {
+      const canvas = document.getElementById('qrCanvas');
+      canvas.innerHTML = '';
+      QRCode.toCanvas(canvas, link);
+    }
+
+  } catch (e) {
+    out.textContent = `❌ Erreur réseau — ${e.message || e}`;
   }
+}
 
   // ------- bind des boutons -------
   testBtn    && (testBtn.onclick    = () => ping().then(ok => ok && alertMsg("API OK ✅")));
