@@ -173,223 +173,274 @@
 
   <!-- Script principal -->
 <script>
-(function () {
-  // ------- helpers UI -------
-  const $ = (id) => document.getElementById(id);
-  const apiInput     = $("apiBase");
-  const statusPill   = $("statusPill");
-  const testBtn      = $("testBtn");
-  const loadBtn      = $("loadBtn");
-  const refreshBtn   = $("refreshBtn");
-  const listLimit    = $("listLimit");
-  const listOffset   = $("listOffset");
-  const tokensList   = $("tokensList");
-  const loginEmail   = $("loginEmail");
-  const loginPass    = $("loginPassword");
-  const loginBtn     = $("loginBtn");
-  const signupDisplay= $("signupDisplay");
-  const signupEmail  = $("signupEmail");
-  const signupPass   = $("signupPassword");
-  const signupBtn    = $("signupBtn");
-  const mintBodyEl   = $("mintBody");
-  const mintBtn      = $("mintBtn");
-  const mintResult   = $("mintResult");
-  const sessionInfo  = $("sessionInfo");
-  const qrSection    = $("qrSection");
-  const qrCanvas     = $("qrCanvas");
-  const shareBtn     = $("shareBtn");
-  const shareLink    = $("shareLink");
+// --- petites fonctions utilitaires ---
+function alertMsg(msg) {
+  alert(msg);
+}
 
-  // ------- persistence -------
-  function getApiBase() {
-    let v = (apiInput?.value || "").trim();
-    if (!v) try { v = localStorage.getItem("fg_api_base") || ""; } catch {}
-    v = v.replace(/\/+$/, ""); // retire slash final
-    if (apiInput) apiInput.value = v;
-    try { localStorage.setItem("fg_api_base", v); } catch {}
-    return v;
-  }
-  if (apiInput && !apiInput.value) {
-    try { apiInput.value = localStorage.getItem("fg_api_base") || "https://foodgoov.onrender.com"; } catch {}
-  }
-  apiInput?.addEventListener("change", getApiBase);
+function getApiBase() {
+  const el = document.getElementById("apiBase");
+  return el?.value?.trim() || "";
+}
 
-  function setStatus(ok) {
-    if (!statusPill) return;
-    statusPill.textContent = ok ? "En ligne" : "Hors ligne";
-  }
-  function alertMsg(msg){ window.alert(msg); }
+// --- Références DOM ---
+const apiBaseEl       = document.getElementById("apiBase");
+const statusPillEl    = document.getElementById("statusPill");
+const sessionInfoEl   = document.getElementById("sessionInfo");
+const tokensListEl    = document.getElementById("tokensList");
+const listLimitEl     = document.getElementById("listLimit");
+const listOffsetEl    = document.getElementById("listOffset");
 
-  // ------- session token en mémoire -------
-  let SESSION = null; // {producer_id, display_name, session_token, api_key}
+const mintBodyEl      = document.getElementById("mintBody");
+const mintResultEl    = document.getElementById("mintResult");
+const qrSectionEl     = document.getElementById("qrSection");
+const qrCanvasEl      = document.getElementById("qrCanvas");
+const shareBtnEl      = document.getElementById("shareBtn");
+const shareLinkEl     = document.getElementById("shareLink");
+
+const loginEmailEl    = document.getElementById("loginEmail");
+const loginPasswordEl = document.getElementById("loginPassword");
+
+const signupDisplayEl = document.getElementById("signupDisplay");
+const signupEmailEl   = document.getElementById("signupEmail");
+const signupPasswordEl= document.getElementById("signupPassword");
+
+const testBtn   = document.getElementById("testBtn");
+const loadBtn   = document.getElementById("loadBtn");
+const refreshBtn= document.getElementById("refreshBtn");
+const loginBtn  = document.getElementById("loginBtn");
+const signupBtn = document.getElementById("signupBtn");
+const mintBtn   = document.getElementById("mintBtn");
+
+// --- stockage simple de la session côté navigateur ---
+let SESSION = null; // { display_name, session_token, producer_id }
+
+// Charger la session depuis localStorage
+(function restoreSession() {
   try {
     const raw = localStorage.getItem("fg_session");
-    if (raw) SESSION = JSON.parse(raw);
-  } catch {}
-
-  function saveSession(s) {
-    SESSION = s;
-    try { localStorage.setItem("fg_session", JSON.stringify(s)); } catch {}
-    if (sessionInfo) {
-      sessionInfo.textContent = s ? (s.display_name + " · " + s.session_token.slice(0, 8) + "…") : "—";
+    if (raw) {
+      SESSION = JSON.parse(raw);
+      sessionInfoEl.textContent = `${SESSION.display_name} · ${SESSION.session_token.slice(0,10)}…`;
+      statusPillEl.textContent = "En ligne";
     }
-  }
-  saveSession(SESSION); // reflète l’état au chargement
-
-  // ------- appels API -------
-  async function ping() {
-    const base = getApiBase();
-    try {
-      const r = await fetch(base + "/v1/status", { method: "GET", mode: "cors", cache: "no-store" });
-      if (!r.ok) throw new Error("HTTP " + r.status + " " + (await r.text()));
-      setStatus(true);
-      return true;
-    } catch (e) {
-      setStatus(false);
-      alertMsg("API indisponible\n\n" + (e.message || e));
-      return false;
-    }
-  }
-
-  async function doLogin() {
-    const base = getApiBase();
-    const email = (loginEmail?.value || "").trim().toLowerCase();
-    const pw    = (loginPass?.value || "");
-    if (!email || !pw) { alertMsg("Email et mot de passe requis."); return; }
-    const ok = await ping(); if (!ok) return;
-
-    try {
-      const r = await fetch(base + "/v1/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password: pw })
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
-      // attend { producer_id, api_key, session_token, display_name }
-      saveSession(data);
-      alertMsg("Connecté : " + data.display_name);
-    } catch (e) {
-      alertMsg("Connexion échouée : " + (e.message || e));
-    }
-  }
-
-  async function doSignup() {
-    const base = getApiBase();
-    const display = (signupDisplay?.value || "").trim();
-    const email   = (signupEmail?.value || "").trim().toLowerCase();
-    const pw      = (signupPass?.value || "");
-    if (!display || !email || !pw) { alertMsg("Tous les champs sont requis."); return; }
-    const ok = await ping(); if (!ok) return;
-
-    try {
-      const r = await fetch(base + "/v1/auth/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ display_name: display, email, password: pw })
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
-      saveSession(data);
-      alertMsg("Compte créé : " + data.display_name);
-    } catch (e) {
-      alertMsg("Création échouée : " + (e.message || e));
-    }
-  }
-
-  async function loadMyTokens() {
-    const base = getApiBase();
-    const ok = await ping(); if (!ok) return;
-    if (!SESSION?.session_token) { alertMsg("Connecte-toi d’abord."); return; }
-
-    const lim = parseInt(listLimit?.value || "25", 10) || 25;
-    const off = parseInt(listOffset?.value || "0", 10) || 0;
-
-    try {
-      const r = await fetch(`${base}/v1/admin/my-tokens?limit=${lim}&offset=${off}`, {
-        method: "GET",
-        headers: { "x-session": SESSION.session_token }
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
-      const items = data.items || [];
-      tokensList.innerHTML = items.length
-        ? items.map(t => `• <code>${t.token_id}</code> — ${t.category} / ${t.domain_id} / ${t.vintage_year} (${t.quantity.count} ${t.quantity.unit})`).join("<br>")
-        : "—";
-    } catch (e) {
-      tokensList.innerHTML = "Erreur: " + (e.message || e);
-    }
-  }
-
-  async function doMint() {
-  const base = (document.getElementById('apiBase').value || '').trim().replace(/\/+$/, '');
-  const out = document.getElementById('mintResult');
-  out.textContent = '';
-  if (!base) { alert('API Base URL manquante'); return; }
-
-  // ✅ récupère la session depuis le stockage local
-  let sess = null;
-  try {
-    const raw = localStorage.getItem('fg_session');
-    if (raw) sess = JSON.parse(raw);
-  } catch {}
-  const token = sess?.session_token;
-  if (!token) { alert('Connecte-toi d’abord'); return; }
-
-  // ✅ prépare le JSON du token
-  let payload;
-  try { payload = JSON.parse(document.getElementById('mintBody').value); }
-  catch { alert('JSON invalide dans le bloc Mint'); return; }
-
-  try {
-    const r = await fetch(base + '/v1/tokens', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-session': token
-      },
-      body: JSON.stringify(payload)
-    });
-
-    const text = await r.text();
-    let data = {};
-    try { data = JSON.parse(text); } catch { data = { detail: text }; }
-
-    if (!r.ok) {
-      out.textContent = `❌ ${r.status} — ${data.detail || text}`;
-      alert(`Mint échoué:\n${r.status} — ${data.detail || text}`);
-      return;
-    }
-
-    // ✅ Succès
-    out.textContent = `✅ Token créé: ${data.token_id}`;
-    const link = data.qr_url || (`https://foodgoov-dashboard.onrender.com/verify.html?token_id=${data.token_id}`);
-
-    document.getElementById('qrSection').classList.remove('hidden');
-    document.getElementById('shareLink').textContent = link;
-
-    if (window.QRCode) {
-      const canvas = document.getElementById('qrCanvas');
-      canvas.innerHTML = '';
-      QRCode.toCanvas(canvas, link);
-    }
-
   } catch (e) {
-    out.textContent = `❌ Erreur réseau — ${e.message || e}`;
+    console.warn("Impossible de restaurer la session", e);
+  }
+})();
+
+// --- ping / status ---
+async function ping() {
+  const base = getApiBase();
+  if (!base) {
+    alertMsg("API Base URL manquante.");
+    return false;
+  }
+  try {
+    const r = await fetch(base + "/v1/status");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const data = await r.json();
+    statusPillEl.textContent = "En ligne";
+    return true;
+  } catch (e) {
+    console.error(e);
+    statusPillEl.textContent = "Hors ligne";
+    alertMsg("API indisponible");
+    return false;
   }
 }
 
-  // ------- bind des boutons -------
-  testBtn    && (testBtn.onclick    = () => ping().then(ok => ok && alertMsg("API OK ✅")));
-  loadBtn    && (loadBtn.onclick    = loadMyTokens);
-  refreshBtn && (refreshBtn.onclick = loadMyTokens);
-  loginBtn   && (loginBtn.onclick   = doLogin);
-  signupBtn  && (signupBtn.onclick  = doSignup);
-  mintBtn    && (mintBtn.onclick    = doMint);
+// --- login / signup ---
+async function doLogin() {
+  const base = getApiBase();
+  if (!base) { alertMsg("API Base URL manquante."); return; }
 
-  // Ping auto au chargement
-  ping();
-})();
+  const email = loginEmailEl.value.trim();
+  const pw    = loginPasswordEl.value.trim();
+  if (!email || !pw) { alertMsg("Email et mot de passe requis."); return; }
+
+  try {
+    const r = await fetch(base + "/v1/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: pw }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || "Login échoué");
+
+    SESSION = data;
+    localStorage.setItem("fg_session", JSON.stringify(SESSION));
+    sessionInfoEl.textContent = `${data.display_name} · ${data.session_token.slice(0,10)}…`;
+    statusPillEl.textContent = "En ligne";
+    alertMsg("Connecté : " + data.display_name);
+  } catch (e) {
+    alertMsg("Erreur de connexion : " + (e.message || e));
+  }
+}
+
+async function doSignup() {
+  const base = getApiBase();
+  if (!base) { alertMsg("API Base URL manquante."); return; }
+
+  const display = signupDisplayEl.value.trim();
+  const email   = signupEmailEl.value.trim();
+  const pw      = signupPasswordEl.value.trim();
+  if (!display || !email || !pw) { alertMsg("Tous les champs sont requis."); return; }
+
+  try {
+    const r = await fetch(base + "/v1/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ display_name: display, email, password: pw }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || "Signup échoué");
+
+    SESSION = data;
+    localStorage.setItem("fg_session", JSON.stringify(SESSION));
+    sessionInfoEl.textContent = `${data.display_name} · ${data.session_token.slice(0,10)}…`;
+    statusPillEl.textContent = "En ligne";
+    alertMsg("Compte créé : " + data.display_name);
+  } catch (e) {
+    alertMsg("Erreur création compte : " + (e.message || e));
+  }
+}
+
+// --- charger mes tokens ---
+async function loadMyTokens() {
+  const base = getApiBase();
+  if (!base) { alertMsg("API Base URL manquante."); return; }
+  if (!SESSION?.session_token) { alertMsg("Connecte-toi d'abord."); return; }
+
+  const limit  = parseInt(listLimitEl.value || "25", 10);
+  const offset = parseInt(listOffsetEl.value || "0", 10);
+
+  try {
+    const r = await fetch(`${base}/v1/admin/my-tokens?limit=${limit}&offset=${offset}`, {
+      headers: { "x-session": SESSION.session_token },
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || "Erreur chargement tokens");
+
+    if (!data.items || data.items.length === 0) {
+      tokensListEl.textContent = "Aucun token pour l’instant.";
+      return;
+    }
+
+    tokensListEl.textContent = data.items
+      .map(t => `${t.token_id} — ${t.category} / ${t.domain_id} / ${t.vintage_year} (${t.quantity.count} ${t.quantity.unit})`)
+      .join("\n");
+  } catch (e) {
+    tokensListEl.textContent = "Erreur: " + (e.message || e);
+  }
+}
+
+// --- Mint + QR + copie ---
+async function doMint() {
+  const base   = getApiBase();
+  if (!base) { alertMsg("API Base URL manquante."); return; }
+
+  const ok = await ping();
+  if (!ok) return;
+  if (!SESSION?.session_token) { alertMsg("Connecte-toi d'abord."); return; }
+
+  let payload;
+  try {
+    payload = JSON.parse(mintBodyEl.value);
+  } catch {
+    alertMsg("JSON invalide dans la zone Mint.");
+    return;
+  }
+
+  try {
+    const r = await fetch(base + "/v1/tokens", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-session": SESSION.session_token,
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
+    mintResultEl.textContent = "✅ Token créé: " + data.token_id;
+
+    // QR + lien
+    if (qrSectionEl && qrCanvasEl && shareLinkEl) {
+      qrSectionEl.classList.remove("hidden");
+      const qrUrl =
+        data.qr_url ||
+        (location.origin + "/verify.html?token_id=" + encodeURIComponent(data.token_id));
+      shareLinkEl.textContent = qrUrl;
+
+      // Dessin du QR si la lib est dispo
+      if (window.QRCode) {
+        const ctx = qrCanvasEl.getContext("2d");
+        ctx.clearRect(0, 0, qrCanvasEl.width, qrCanvasEl.height);
+        const qr = new QRCode.QRCode(4, QRCode.ErrorCorrectLevel.M);
+        qr.addData(qrUrl);
+        qr.make();
+        const cellSize = 4;
+        qrCanvasEl.width  = qr.getModuleCount() * cellSize;
+        qrCanvasEl.height = qr.getModuleCount() * cellSize;
+        for (let r = 0; r < qr.getModuleCount(); r++) {
+          for (let c = 0; c < qr.getModuleCount(); c++) {
+            ctx.fillStyle = qr.isDark(r, c) ? "#000" : "#fff";
+            ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
+          }
+        }
+      }
+
+      // gestion du bouton Copier
+      if (shareBtnEl) {
+        shareBtnEl.onclick = async () => {
+          const text = shareLinkEl.textContent || "";
+          if (!text) { alertMsg("Rien à copier."); return; }
+
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              await navigator.clipboard.writeText(text);
+              alertMsg("Lien copié dans le presse-papiers 👍");
+            } else {
+              // fallback iPad / anciens navigateurs
+              const ta = document.createElement("textarea");
+              ta.value = text;
+              ta.style.position = "fixed";
+              ta.style.left = "-9999px";
+              document.body.appendChild(ta);
+              ta.focus();
+              ta.select();
+              const ok = document.execCommand("copy");
+              document.body.removeChild(ta);
+              if (ok) {
+                alertMsg("Lien copié 👍");
+              } else {
+                alertMsg("Copie impossible, sélectionne le texte manuellement :\n" + text);
+              }
+            }
+          } catch (e) {
+            alertMsg("Copie impossible, sélectionne le texte manuellement :\n" + text);
+          }
+        };
+      }
+    }
+  } catch (e) {
+    mintResultEl.textContent = "Erreur: " + (e.message || e);
+  }
+}
+
+// --- Bind des boutons ---
+if (testBtn)   testBtn.onclick    = () => ping().then(ok => ok && alertMsg("API OK ✅"));
+if (loadBtn)   loadBtn.onclick    = loadMyTokens;
+if (refreshBtn)refreshBtn.onclick = loadMyTokens;
+if (loginBtn)  loginBtn.onclick   = doLogin;
+if (signupBtn) signupBtn.onclick  = doSignup;
+if (mintBtn)   mintBtn.onclick    = doMint;
+
+// Initialisation : si une session existe déjà, on met à jour le statut
+if (SESSION) {
+  statusPillEl.textContent = "En ligne";
+}
 </script>
 </body>
 </html>
