@@ -363,11 +363,11 @@ async function doMint() {
       },
       body: JSON.stringify(payload),
     });
-const data = await r.json();
-if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
 
-LAST_TOKEN_ID = data.token_id;  // mémorise le dernier token
-mintResultEl.textContent = "✅ Token créé: " + data.token_id;
+     LAST_TOKEN_ID = data.token_id;  // mémorise le dernier token
+     mintResultEl.textContent = "✅ Token créé: " + data.token_id;
 
     // QR + lien
     if (qrSectionEl && qrCanvasEl && shareLinkEl) {
@@ -430,6 +430,31 @@ mintResultEl.textContent = "✅ Token créé: " + data.token_id;
     }
   } catch (e) {
     mintResultEl.textContent = "Erreur: " + (e.message || e);
+  }
+}
+  
+// === Nouveau : téléchargement du QR ===
+function downloadQR() {
+  if (!qrCanvasEl) {
+    alertMsg("QR indisponible.");
+    return;
+  }
+
+  // si aucun token encore minté
+  if (!LAST_TOKEN_ID) {
+    alertMsg("Aucun token récent à télécharger.");
+    return;
+  }
+
+  try {
+    const link = document.createElement("a");
+    link.href = qrCanvasEl.toDataURL("image/png");
+    link.download = "foodgoov-qr-" + LAST_TOKEN_ID + ".png";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } catch (e) {
+    alertMsg("Téléchargement impossible :\n" + (e.message || e));
   }
 }
 
