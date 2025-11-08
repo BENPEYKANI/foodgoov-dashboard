@@ -215,7 +215,8 @@ const mintBtn   = document.getElementById("mintBtn");
 
 // --- stockage simple de la session côté navigateur ---
 let SESSION = null; // { display_name, session_token, producer_id }
-
+let LAST_TOKEN_ID = null;
+  
 // Charger la session depuis localStorage
 (function restoreSession() {
   try {
