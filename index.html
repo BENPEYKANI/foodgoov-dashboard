@@ -368,9 +368,10 @@ async function doMint() {
 
      LAST_TOKEN_ID = data.token_id;  // mémorise le dernier token
      mintResultEl.textContent = "✅ Token créé: " + data.token_id;
+    
     // Génération du QR code dans le canvas
-if (window.QRCode && qrCanvasEl) {
-  try {
+    if (window.QRCode && qrCanvasEl) {
+    try {
     const qr = new QRCode.QRCode(qrCanvasEl, QRCode.ErrorCorrectLevel.M);
     qr.addData(data.qr_url || (location.origin + "/verify.html?token_id=" + data.token_id));
     qr.make();
