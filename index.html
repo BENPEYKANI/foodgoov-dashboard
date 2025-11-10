@@ -439,55 +439,60 @@ async function doMint() {
   }
 }
 
-// --- Téléchargement du QR ---
+// --- Téléchargement du QR (via la lib QRCode) ---
 function downloadQR() {
-  if (!qrCanvasEl) {
-    alertMsg("Aucun QR à télécharger.");
+  // On vérifie qu'on a bien un dernier token
+  if (!LAST_TOKEN_ID) {
+    alertMsg("Mint un token d'abord.");
     return;
   }
 
-  const w = qrCanvasEl.width;
-  const h = qrCanvasEl.height;
-  if (!w || !h) {
-    alertMsg("QR vide : clique d'abord sur Mint token.");
+  // L'URL à encoder dans le QR
+  const qrUrl =
+    (shareLinkEl && shareLinkEl.textContent) ||
+    (location.origin + "/verify.html?token_id=" + encodeURIComponent(LAST_TOKEN_ID));
+
+  if (!window.QRCode || !QRCode.toDataURL) {
+    alertMsg("Générateur de QR indisponible.");
     return;
   }
 
-  // Canvas temporaire avec fond blanc + bord
-  const tempCanvas = document.createElement("canvas");
-  const size = Math.max(w, h) + 20;
-  tempCanvas.width  = size;
-  tempCanvas.height = size;
+  // On demande directement un PNG à la librairie
+  QRCode.toDataURL(
+    qrUrl,
+    {
+      width: 512,
+      margin: 2,
+      color: {
+        dark: "#000000",
+        light: "#ffffff"
+      }
+    },
+    function (err, dataUrl) {
+      if (err || !dataUrl) {
+        console.error("Erreur QR toDataURL :", err);
+        alertMsg("Impossible de générer l'image du QR.");
+        return;
+      }
 
-  const ctx = tempCanvas.getContext("2d");
+      const ua = navigator.userAgent || "";
+      const isIOS = /iPad|iPhone|iPod/.test(ua);
+      const filename = "foodgoov-qr-" + (LAST_TOKEN_ID || "token") + ".png";
 
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, size, size);
-
-  const offsetX = (size - w) / 2;
-  const offsetY = (size - h) / 2;
-  ctx.drawImage(qrCanvasEl, offsetX, offsetY);
-
-  ctx.strokeStyle = "#000000";
-  ctx.lineWidth   = 2;
-  ctx.strokeRect(1, 1, size - 2, size - 2);
-
-  const dataUrl = tempCanvas.toDataURL("image/png");
-
-  const ua    = navigator.userAgent || "";
-  const isIOS = /iPad|iPhone|iPod/.test(ua);
-  const filename = "foodgoov-qr-" + (LAST_TOKEN_ID || "token") + ".png";
-
-  if (isIOS) {
-    window.open(dataUrl, "_blank");
-  } else {
-    const link = document.createElement("a");
-    link.href = dataUrl;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }
+      if (isIOS) {
+        // iPad / iPhone : ouverture dans un onglet, ensuite tu sauvegardes
+        window.open(dataUrl, "_blank");
+      } else {
+        // Ordinateur : téléchargement automatique
+        const link = document.createElement("a");
+        link.href = dataUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    }
+  );
 }
 
 // --- Bind des boutons ---
