@@ -438,19 +438,40 @@ if (window.QRCode && qrCanvasEl) {
   }
 }
   
-// === Nouveau : téléchargement du QR ===
+// --- Nouveau : téléchargement du QR (version simplifiée) ---
 function downloadQR() {
   if (!qrCanvasEl) {
     alertMsg("Aucun QR à télécharger.");
     return;
   }
 
+  // Si le canvas est vide (pas encore de mint)
   const w = qrCanvasEl.width;
   const h = qrCanvasEl.height;
-  if (w === 0 || h === 0) {
-    alertMsg("QR vide : essaie de remint le token.");
+  if (!w || !h) {
+    alertMsg("QR vide : clique d'abord sur Mint token.");
     return;
   }
+
+  // On récupère directement l'image PNG du canvas existant
+  const dataUrl = qrCanvasEl.toDataURL("image/png");
+
+  const ua = navigator.userAgent || "";
+  const isIOS = /iPad|iPhone|iPod/.test(ua);
+
+  if (isIOS) {
+    // iPad / iPhone : on ouvre dans un nouvel onglet, tu peux ensuite sauvegarder
+    window.open(dataUrl, "_blank");
+  } else {
+    // Ordinateur : téléchargement automatique
+    const link = document.createElement("a");
+    link.href = dataUrl;
+    link.download = "foodgoov-qr-" + (LAST_TOKEN_ID || "token") + ".png";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+}
 
   // Créer un canvas temporaire avec fond blanc
   const tempCanvas = document.createElement("canvas");
