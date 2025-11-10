@@ -439,60 +439,40 @@ async function doMint() {
   }
 }
 
-// --- Téléchargement du QR (via la lib QRCode) ---
+// --- Nouveau : téléchargement du QR (utilise simplement le canvas existant) ---
 function downloadQR() {
-  // On vérifie qu'on a bien un dernier token
-  if (!LAST_TOKEN_ID) {
-    alertMsg("Mint un token d'abord.");
+  if (!qrCanvasEl) {
+    alertMsg("Aucun QR à télécharger.");
     return;
   }
 
-  // L'URL à encoder dans le QR
-  const qrUrl =
-    (shareLinkEl && shareLinkEl.textContent) ||
-    (location.origin + "/verify.html?token_id=" + encodeURIComponent(LAST_TOKEN_ID));
-
-  if (!window.QRCode || !QRCode.toDataURL) {
-    alertMsg("Générateur de QR indisponible.");
+  // Vérifier que le canvas n'est pas vide
+  const w = qrCanvasEl.width;
+  const h = qrCanvasEl.height;
+  if (!w || !h) {
+    alertMsg("QR vide : clique d'abord sur Mint token.");
     return;
   }
 
-  // On demande directement un PNG à la librairie
-  QRCode.toDataURL(
-    qrUrl,
-    {
-      width: 512,
-      margin: 2,
-      color: {
-        dark: "#000000",
-        light: "#ffffff"
-      }
-    },
-    function (err, dataUrl) {
-      if (err || !dataUrl) {
-        console.error("Erreur QR toDataURL :", err);
-        alertMsg("Impossible de générer l'image du QR.");
-        return;
-      }
+  // On récupère directement le PNG du canvas
+  const dataUrl = qrCanvasEl.toDataURL("image/png");
 
-      const ua = navigator.userAgent || "";
-      const isIOS = /iPad|iPhone|iPod/.test(ua);
-      const filename = "foodgoov-qr-" + (LAST_TOKEN_ID || "token") + ".png";
+  const ua       = navigator.userAgent || "";
+  const isIOS    = /iPad|iPhone|iPod/.test(ua);
+  const filename = "foodgoov-qr-" + (LAST_TOKEN_ID || "token") + ".png";
 
-      if (isIOS) {
-        // iPad / iPhone : ouverture dans un onglet, ensuite tu sauvegardes
-        window.open(dataUrl, "_blank");
-      } else {
-        // Ordinateur : téléchargement automatique
-        const link = document.createElement("a");
-        link.href = dataUrl;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }
-    }
-  );
+  if (isIOS) {
+    // iPad / iPhone : on ouvre dans un nouvel onglet, tu peux ensuite sauvegarder
+    window.open(dataUrl, "_blank");
+  } else {
+    // Ordinateur : téléchargement automatique
+    const link = document.createElement("a");
+    link.href = dataUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
 }
 
 // --- Bind des boutons ---
