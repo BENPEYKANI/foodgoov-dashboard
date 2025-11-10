@@ -214,9 +214,9 @@ const signupBtn = document.getElementById("signupBtn");
 const mintBtn   = document.getElementById("mintBtn");
 
 // --- stockage simple de la session côté navigateur ---
-let SESSION = null; // { display_name, session_token, producer_id }
-let LAST_TOKEN_ID = null;
-  
+let SESSION = null;           // { display_name, session_token, producer_id }
+let LAST_TOKEN_ID = null;     // dernier token minté, utile pour le nom du fichier PNG
+
 // Charger la session depuis localStorage
 (function restoreSession() {
   try {
@@ -241,7 +241,7 @@ async function ping() {
   try {
     const r = await fetch(base + "/v1/status");
     if (!r.ok) throw new Error("HTTP " + r.status);
-    const data = await r.json();
+    await r.json();
     statusPillEl.textContent = "En ligne";
     return true;
   } catch (e) {
@@ -366,38 +366,39 @@ async function doMint() {
     const data = await r.json();
     if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
 
-     LAST_TOKEN_ID = data.token_id;  // mémorise le dernier token
-     mintResultEl.textContent = "✅ Token créé: " + data.token_id;
-    
+    LAST_TOKEN_ID = data.token_id;  // mémorise le dernier token
+    mintResultEl.textContent = "✅ Token créé: " + data.token_id;
+
     // Génération du QR code dans le canvas (lib QRCode 1.5.3)
-if (window.QRCode && qrCanvasEl) {
-  try {
-    const qrUrl =
-      data.qr_url ||
-      (location.origin + "/verify.html?token_id=" + encodeURIComponent(data.token_id));
+    let qrUrl = null;
+    if (window.QRCode && qrCanvasEl) {
+      try {
+        qrUrl =
+          data.qr_url ||
+          (location.origin + "/verify.html?token_id=" + encodeURIComponent(data.token_id));
 
-    // Taille fixe du canvas pour avoir un PNG net
-    const size = 512; // pixels
-    qrCanvasEl.width = size;
-    qrCanvasEl.height = size;
+        const size = 512; // pixels
+        qrCanvasEl.width  = size;
+        qrCanvasEl.height = size;
 
-    // Utilisation correcte de la lib: QRCode.toCanvas(...)
-    await QRCode.toCanvas(qrCanvasEl, qrUrl, {
-      width: size,
-      margin: 1,
-    });
-  } catch (err) {
-    console.error("Erreur QR :", err);
-    alertMsg("Impossible de générer le QR.");
-  }
-}
-      
+        await QRCode.toCanvas(qrCanvasEl, qrUrl, {
+          width: size,
+          margin: 1,
+        });
+      } catch (err) {
+        console.error("Erreur QR :", err);
+        alertMsg("Impossible de générer le QR.");
+      }
+    }
+
     // QR + lien
     if (qrSectionEl && qrCanvasEl && shareLinkEl) {
       qrSectionEl.classList.remove("hidden");
-      const qrUrl =
-        data.qr_url ||
-        (location.origin + "/verify.html?token_id=" + encodeURIComponent(data.token_id));
+      if (!qrUrl) {
+        qrUrl =
+          data.qr_url ||
+          (location.origin + "/verify.html?token_id=" + encodeURIComponent(data.token_id));
+      }
       shareLinkEl.textContent = qrUrl;
 
       // gestion du bouton Copier
@@ -437,15 +438,14 @@ if (window.QRCode && qrCanvasEl) {
     mintResultEl.textContent = "Erreur: " + (e.message || e);
   }
 }
-  
-// --- Nouveau : téléchargement du QR (version simplifiée) ---
+
+// --- Téléchargement du QR ---
 function downloadQR() {
   if (!qrCanvasEl) {
     alertMsg("Aucun QR à télécharger.");
     return;
   }
 
-  // Si le canvas est vide (pas encore de mint)
   const w = qrCanvasEl.width;
   const h = qrCanvasEl.height;
   if (!w || !h) {
@@ -453,60 +453,37 @@ function downloadQR() {
     return;
   }
 
-  // On récupère directement l'image PNG du canvas existant
-  const dataUrl = qrCanvasEl.toDataURL("image/png");
-
-  const ua = navigator.userAgent || "";
-  const isIOS = /iPad|iPhone|iPod/.test(ua);
-
-  if (isIOS) {
-    // iPad / iPhone : on ouvre dans un nouvel onglet, tu peux ensuite sauvegarder
-    window.open(dataUrl, "_blank");
-  } else {
-    // Ordinateur : téléchargement automatique
-    const link = document.createElement("a");
-    link.href = dataUrl;
-    link.download = "foodgoov-qr-" + (LAST_TOKEN_ID || "token") + ".png";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }
-}
-
-  // Créer un canvas temporaire avec fond blanc
+  // Canvas temporaire avec fond blanc + bord
   const tempCanvas = document.createElement("canvas");
   const size = Math.max(w, h) + 20;
-  tempCanvas.width = size;
+  tempCanvas.width  = size;
   tempCanvas.height = size;
 
   const ctx = tempCanvas.getContext("2d");
 
-  // Fond blanc
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, size, size);
 
-  // Dessiner le QR au centre
-  const offset = (size - w) / 2;
-  ctx.drawImage(qrCanvasEl, offset, offset);
+  const offsetX = (size - w) / 2;
+  const offsetY = (size - h) / 2;
+  ctx.drawImage(qrCanvasEl, offsetX, offsetY);
 
-  // Contour léger pour bien voir les bords
   ctx.strokeStyle = "#000000";
-  ctx.lineWidth = 2;
+  ctx.lineWidth   = 2;
   ctx.strokeRect(1, 1, size - 2, size - 2);
 
   const dataUrl = tempCanvas.toDataURL("image/png");
 
-  const ua = navigator.userAgent || "";
+  const ua    = navigator.userAgent || "";
   const isIOS = /iPad|iPhone|iPod/.test(ua);
+  const filename = "foodgoov-qr-" + (LAST_TOKEN_ID || "token") + ".png";
 
   if (isIOS) {
-    // iPad/iPhone : ouvrir dans un nouvel onglet pour sauvegarder manuellement
     window.open(dataUrl, "_blank");
   } else {
-    // Ordinateur : téléchargement automatique
     const link = document.createElement("a");
     link.href = dataUrl;
-    link.download = "foodgoov-qr.png";
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -514,13 +491,13 @@ function downloadQR() {
 }
 
 // --- Bind des boutons ---
-if (testBtn)   testBtn.onclick    = () => ping().then(ok => ok && alertMsg("API OK ✅"));
-if (loadBtn)   loadBtn.onclick    = loadMyTokens;
-if (refreshBtn)refreshBtn.onclick = loadMyTokens;
-if (loginBtn)  loginBtn.onclick   = doLogin;
-if (signupBtn) signupBtn.onclick  = doSignup;
-if (mintBtn)   mintBtn.onclick    = doMint;
-if (downloadQrBtn) downloadQrBtn.onclick = downloadQR;
+if (testBtn)      testBtn.onclick      = () => ping().then(ok => ok && alertMsg("API OK ✅"));
+if (loadBtn)      loadBtn.onclick      = loadMyTokens;
+if (refreshBtn)   refreshBtn.onclick   = loadMyTokens;
+if (loginBtn)     loginBtn.onclick     = doLogin;
+if (signupBtn)    signupBtn.onclick    = doSignup;
+if (mintBtn)      mintBtn.onclick      = doMint;
+if (downloadQrBtn)downloadQrBtn.onclick= downloadQR;
 
 // Initialisation : si une session existe déjà, on met à jour le statut
 if (SESSION) {
