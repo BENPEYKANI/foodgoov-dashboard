@@ -436,26 +436,37 @@ async function doMint() {
 // === Nouveau : téléchargement du QR ===
 function downloadQR() {
   if (!qrCanvasEl) {
-    alertMsg("QR indisponible.");
+    alertMsg("Aucun QR à télécharger.");
     return;
   }
 
-  // si aucun token encore minté
-  if (!LAST_TOKEN_ID) {
-    alertMsg("Aucun token récent à télécharger.");
+  // 1. Vérifier qu'il y a bien quelque chose dans le canvas
+  if (qrCanvasEl.width === 0 || qrCanvasEl.height === 0) {
+    alertMsg("QR vide : essaie de remint le token.");
     return;
   }
 
-  try {
-    const link = document.createElement("a");
-    link.href = qrCanvasEl.toDataURL("image/png");
-    link.download = "foodgoov-qr-" + LAST_TOKEN_ID + ".png";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  } catch (e) {
-    alertMsg("Téléchargement impossible :\n" + (e.message || e));
+  // 2. Récupérer l'image PNG
+  const dataUrl = qrCanvasEl.toDataURL("image/png");
+
+  // 3. Détection très simple d’iPad / iPhone
+  const ua = navigator.userAgent || "";
+  const isIOS = /iPad|iPhone|iPod/.test(ua);
+
+  if (isIOS) {
+    // Sur iPad / iPhone : on ouvre juste l’image dans un nouvel onglet.
+    // Ensuite tu peux utiliser le bouton de partage iOS pour l’enregistrer.
+    window.open(dataUrl, "_blank");
+    return;
   }
+
+  // 4. Comportement normal (desktop, Android, etc.) : vrai téléchargement
+  const link = document.createElement("a");
+  link.href = dataUrl;
+  link.download = "foodgoov-qr-" + (shareLinkEl?.textContent || "lot") + ".png";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 // --- Bind des boutons ---
