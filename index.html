@@ -439,40 +439,25 @@ async function doMint() {
   }
 }
 
-// --- Nouveau : téléchargement du QR (utilise simplement le canvas existant) ---
+// --- Nouveau : téléchargement du QR ---
 function downloadQR() {
-  if (!qrCanvasEl) {
-    alertMsg("Aucun QR à télécharger.");
+  const base = getApiBase();
+  if (!base) {
+    alertMsg("API Base URL manquante.");
     return;
   }
 
-  // Vérifier que le canvas n'est pas vide
-  const w = qrCanvasEl.width;
-  const h = qrCanvasEl.height;
-  if (!w || !h) {
-    alertMsg("QR vide : clique d'abord sur Mint token.");
+  if (!LAST_TOKEN_ID) {
+    alertMsg("Aucun token en mémoire : clique d’abord sur Mint token.");
     return;
   }
 
-  // On récupère directement le PNG du canvas
-  const dataUrl = qrCanvasEl.toDataURL("image/png");
+  // URL de l’API backend qui génère le PNG du QR
+  const url = base + "/v1/tokens/" + encodeURIComponent(LAST_TOKEN_ID) + "/qr";
 
-  const ua       = navigator.userAgent || "";
-  const isIOS    = /iPad|iPhone|iPod/.test(ua);
-  const filename = "foodgoov-qr-" + (LAST_TOKEN_ID || "token") + ".png";
-
-  if (isIOS) {
-    // iPad / iPhone : on ouvre dans un nouvel onglet, tu peux ensuite sauvegarder
-    window.open(dataUrl, "_blank");
-  } else {
-    // Ordinateur : téléchargement automatique
-    const link = document.createElement("a");
-    link.href = dataUrl;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }
+  // Sur iPad / navigateur : on ouvre dans un nouvel onglet,
+  // tu pourras l’enregistrer ou le partager depuis l’interface
+  window.open(url, "_blank");
 }
 
 // --- Bind des boutons ---
