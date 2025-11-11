@@ -185,7 +185,8 @@
     </footer>
   </main>
 
-  <!-- Script principal -->
+        
+<!-- Script principal -->
 <script>
 // --- petites fonctions utilitaires ---
 function alertMsg(msg) {
@@ -406,66 +407,70 @@ async function doMint() {
       }
     }
 
-    // QR + lien
-  if (qrSectionEl && qrCanvasEl && shareLinkEl) {
-  qrSectionEl.classList.remove("hidden");
+    // QR + lien + HTML embarquable
+    if (qrSectionEl && qrCanvasEl && shareLinkEl) {
+      qrSectionEl.classList.remove("hidden");
 
-  // Lien de vérification
-  const qrUrl =
-    data.qr_url ||
-    (location.origin + "/verify.html?token_id=" + encodeURIComponent(data.token_id));
-  shareLinkEl.textContent = qrUrl;
+      // Lien de vérification
+      const linkUrl =
+        data.qr_url ||
+        (location.origin + "/verify.html?token_id=" + encodeURIComponent(data.token_id));
+      shareLinkEl.textContent = linkUrl;
 
-  // 🔹 Code HTML intégrable (image + lien)
-  if (embedHtmlEl) {
-    const apiBase = getApiBase().replace(/\/+$/, ""); // enlève le / final au cas où
-    const imgUrl  = apiBase + "/v1/tokens/" + encodeURIComponent(data.token_id) + "/qr";
+      // 🔹 Code HTML intégrable (image + lien)
+      if (embedHtmlEl) {
+        const apiBase = getApiBase().replace(/\/+$/, ""); // enlève un / final au cas où
+        const imgUrl  = apiBase + "/v1/tokens/" + encodeURIComponent(data.token_id) + "/qr";
 
-    const htmlSnippet =
-`<a href="${qrUrl}" target="_blank" rel="noopener">
+        const htmlSnippet =
+`<a href="${linkUrl}" target="_blank" rel="noopener">
   <img src="${imgUrl}"
        alt="QR FoodGoov pour le lot ${data.token_id}"
        width="220"
        height="220">
 </a>`;
 
-    embedHtmlEl.value = htmlSnippet;
-  }
+        embedHtmlEl.value = htmlSnippet;
+      }
 
-  // bouton "Copier le lien"
-  if (shareBtnEl) {
-    shareBtnEl.onclick = async () => {
-      const text = shareLinkEl.textContent || "";
-      if (!text) { alertMsg("Rien à copier."); return; }
+      // bouton "Copier le lien"
+      if (shareBtnEl) {
+        shareBtnEl.onclick = async () => {
+          const text = shareLinkEl.textContent || "";
+          if (!text) { alertMsg("Rien à copier."); return; }
 
-      try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          await navigator.clipboard.writeText(text);
-          alertMsg("Lien copié dans le presse-papiers 👍");
-        } else {
-          const ta = document.createElement("textarea");
-          ta.value = text;
-          ta.style.position = "fixed";
-          ta.style.left = "-9999px";
-          document.body.appendChild(ta);
-          ta.focus();
-          ta.select();
-          const ok = document.execCommand("copy");
-          document.body.removeChild(ta);
-          if (ok) {
-            alertMsg("Lien copié 👍");
-          } else {
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              await navigator.clipboard.writeText(text);
+              alertMsg("Lien copié dans le presse-papiers 👍");
+            } else {
+              const ta = document.createElement("textarea");
+              ta.value = text;
+              ta.style.position = "fixed";
+              ta.style.left = "-9999px";
+              document.body.appendChild(ta);
+              ta.focus();
+              ta.select();
+              const ok = document.execCommand("copy");
+              document.body.removeChild(ta);
+              if (ok) {
+                alertMsg("Lien copié 👍");
+              } else {
+                alertMsg("Copie impossible, sélectionne le texte manuellement :\n" + text);
+              }
+            }
+          } catch (e) {
             alertMsg("Copie impossible, sélectionne le texte manuellement :\n" + text);
           }
-        }
-      } catch (e) {
-        alertMsg("Copie impossible, sélectionne le texte manuellement :\n" + text);
+        };
       }
-    };
+    }
+  } catch (e) {
+    mintResultEl.textContent = "Erreur: " + (e.message || e);
   }
 }
-    
-// --- Nouveau : téléchargement du QR ---
+
+// --- Nouveau : téléchargement du QR via le backend ---
 function downloadQR() {
   const base = getApiBase();
   if (!base) {
@@ -487,13 +492,13 @@ function downloadQR() {
 }
 
 // --- Bind des boutons ---
-if (testBtn)      testBtn.onclick      = () => ping().then(ok => ok && alertMsg("API OK ✅"));
-if (loadBtn)      loadBtn.onclick      = loadMyTokens;
-if (refreshBtn)   refreshBtn.onclick   = loadMyTokens;
-if (loginBtn)     loginBtn.onclick     = doLogin;
-if (signupBtn)    signupBtn.onclick    = doSignup;
-if (mintBtn)      mintBtn.onclick      = doMint;
-if (downloadQrBtn)downloadQrBtn.onclick= downloadQR;
+if (testBtn)       testBtn.onclick       = () => ping().then(ok => ok && alertMsg("API OK ✅"));
+if (loadBtn)       loadBtn.onclick       = loadMyTokens;
+if (refreshBtn)    refreshBtn.onclick    = loadMyTokens;
+if (loginBtn)      loginBtn.onclick      = doLogin;
+if (signupBtn)     signupBtn.onclick     = doSignup;
+if (mintBtn)       mintBtn.onclick       = doMint;
+if (downloadQrBtn) downloadQrBtn.onclick = downloadQR;
 
 // Initialisation : si une session existe déjà, on met à jour le statut
 if (SESSION) {
