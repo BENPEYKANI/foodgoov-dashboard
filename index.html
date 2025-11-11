@@ -133,14 +133,28 @@
         <div id="mintResult" class="text-sm text-gray-400 mt-2"></div>
 
         <!-- QR / Partage -->
-        <div id="qrSection" class="hidden mt-5 border-t border-[#334155] pt-4 text-center">
-          <canvas id="qrCanvas" class="mx-auto mb-2"></canvas>
-          <button id="shareBtn" class="btn btn-muted text-sm" type="button">Copier</button>
-          <button id="downloadQrBtn" class="btn btn-muted text-sm" type="button">Télécharger le QR</button>
-          <p id="shareLink" class="text-[11px] text-gray-400 mt-2"></p>
-        </div>
-      </div>
-    </section>
+<div id="qrSection" class="hidden mt-5 border-t border-[#334155] pt-4 text-center">
+  <canvas id="qrCanvas" class="mx-auto mb-2"></canvas>
+
+  <div class="flex justify-center gap-3 mb-3">
+    <button id="shareBtn" class="btn btn-muted text-sm" type="button">Copier le lien</button>
+    <button id="downloadQrBtn" class="btn btn-muted text-sm" type="button">Télécharger le QR</button>
+  </div>
+
+  <p id="shareLink" class="text-[11px] text-gray-400 mb-3"></p>
+
+  <!-- 🔽 Nouveau : code HTML à intégrer -->
+  <textarea
+    id="embedHtml"
+    class="field w-full font-mono text-[11px] mt-2"
+    rows="3"
+    readonly
+    placeholder="Code HTML du QR apparaîtra ici après le mint…"
+  ></textarea>
+  <p class="text-[11px] text-gray-500 mt-1">
+    (À coller dans votre fiche produit / site vitrine / email HTML)
+  </p>
+</div>
 
     <!-- Ligne 3 : Auth -->
     <section class="grid md:grid-cols-2 gap-4">
