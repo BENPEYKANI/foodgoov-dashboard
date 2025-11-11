@@ -237,7 +237,7 @@ const listOffsetEl    = document.getElementById("listOffset");
 const mintBodyEl      = document.getElementById("mintBody");
 const mintResultEl    = document.getElementById("mintResult");
 const qrSectionEl     = document.getElementById("qrSection");
-const qrPreviewEl     = document.getElementById("qrPreview");
+const qrCanvasEl      = document.getElementById("qrCanvas");
 const shareBtnEl      = document.getElementById("shareBtn");
 const shareLinkEl     = document.getElementById("shareLink");
 const downloadQrBtn   = document.getElementById("downloadQrBtn");
@@ -258,8 +258,8 @@ const signupBtn = document.getElementById("signupBtn");
 const mintBtn   = document.getElementById("mintBtn");
 
 // --- stockage simple de la session côté navigateur ---
-let SESSION = null;           // { display_name, session_token, producer_id }
-let LAST_TOKEN_ID = null;     // dernier token minté, utile pour le nom du fichier PNG
+let SESSION = null;       // { display_name, session_token, producer_id }
+let LAST_TOKEN_ID = null; // dernier token minté, utile pour le nom du fichier PNG
 
 // Charger la session depuis localStorage
 (function restoreSession() {
@@ -296,7 +296,7 @@ async function ping() {
   }
 }
 
-// --- login / signup ---
+// --- login ---
 async function doLogin() {
   const base = getApiBase();
   if (!base) { alertMsg("API Base URL manquante."); return; }
@@ -324,6 +324,7 @@ async function doLogin() {
   }
 }
 
+// --- signup ---
 async function doSignup() {
   const base = getApiBase();
   if (!base) { alertMsg("API Base URL manquante."); return; }
@@ -381,7 +382,7 @@ async function loadMyTokens() {
   }
 }
 
-// --- Mint + QR + copie ---
+// --- Mint + QR + copie + HTML intégrable ---
 async function doMint() {
   const base   = getApiBase();
   if (!base) { alertMsg("API Base URL manquante."); return; }
@@ -410,29 +411,45 @@ async function doMint() {
     const data = await r.json();
     if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
 
-    LAST_TOKEN_ID = data.token_id;  // mémorise le dernier token
+    LAST_TOKEN_ID = data.token_id;
     mintResultEl.textContent = "✅ Token créé: " + data.token_id;
 
-    // --- QR + lien + HTML intégrable (backend génère l'image) ---
+    // 1) Génération du QR dans le canvas (pour aperçu à l'écran)
+    if (window.QRCode && qrCanvasEl) {
+      try {
+        const qrUrl =
+          data.qr_url ||
+          (location.origin + "/verify.html?token_id=" + encodeURIComponent(data.token_id));
+
+        const size = 512;
+        qrCanvasEl.width  = size;
+        qrCanvasEl.height = size;
+
+        await QRCode.toCanvas(qrCanvasEl, qrUrl, {
+          width: size,
+          margin: 1,
+        });
+      } catch (err) {
+        console.error("Erreur QR canvas :", err);
+        alertMsg("Impossible de générer le QR (aperçu).");
+      }
+    }
+
+    // 2) Section QR + lien + HTML intégrable (basé sur le backend PNG)
     if (qrSectionEl && shareLinkEl) {
       qrSectionEl.classList.remove("hidden");
 
-      const apiBase = getApiBase().replace(/\/+$/, ""); // enlève le / final
+      const apiBase = getApiBase().replace(/\/+$/, ""); // enlève / final
       const verifyUrl =
         data.qr_url ||
         (location.origin + "/verify.html?token_id=" + encodeURIComponent(data.token_id));
 
       const imgUrl = apiBase + "/v1/tokens/" + encodeURIComponent(data.token_id) + "/qr";
 
-      // Aperçu image QR
-      if (qrPreviewEl) {
-        qrPreviewEl.src = imgUrl;
-      }
-
       // Lien de vérification
       shareLinkEl.textContent = verifyUrl;
 
-      // Code HTML intégrable (image + lien)
+      // Code HTML <img> + <a> à coller dans fiche produit / site / email
       if (embedHtmlEl) {
         const htmlSnippet =
 `<a href="${verifyUrl}" target="_blank" rel="noopener">
@@ -444,7 +461,7 @@ async function doMint() {
         embedHtmlEl.value = htmlSnippet;
       }
 
-      // Bouton "Copier le lien"
+      // bouton "Copier le lien"
       if (shareBtnEl) {
         shareBtnEl.onclick = async () => {
           const text = shareLinkEl.textContent || "";
@@ -476,6 +493,11 @@ async function doMint() {
         };
       }
     }
+  } catch (e) {
+    mintResultEl.textContent = "Erreur: " + (e.message || e);
+  }
+}
+
 // --- Nouveau : téléchargement du QR via le backend ---
 function downloadQR() {
   const base = getApiBase();
@@ -493,7 +515,7 @@ function downloadQR() {
   const url = base + "/v1/tokens/" + encodeURIComponent(LAST_TOKEN_ID) + "/qr";
 
   // Sur iPad / navigateur : on ouvre dans un nouvel onglet,
-  // tu pourras l’enregistrer ou le partager depuis l’interface
+  // tu peux ensuite l’enregistrer ou le partager
   window.open(url, "_blank");
 }
 
