@@ -413,55 +413,38 @@ async function doMint() {
     LAST_TOKEN_ID = data.token_id;  // mémorise le dernier token
     mintResultEl.textContent = "✅ Token créé: " + data.token_id;
 
-    // Génération du QR code dans le canvas (lib QRCode 1.5.3)
-    let qrUrl = null;
-    if (window.QRCode && qrCanvasEl) {
-      try {
-        qrUrl =
-          data.qr_url ||
-          (location.origin + "/verify.html?token_id=" + encodeURIComponent(data.token_id));
-
-        const size = 512; // pixels
-        qrCanvasEl.width  = size;
-        qrCanvasEl.height = size;
-
-        await QRCode.toCanvas(qrCanvasEl, qrUrl, {
-          width: size,
-          margin: 1,
-        });
-      } catch (err) {
-        console.error("Erreur QR :", err);
-        alertMsg("Impossible de générer le QR.");
-      }
-    }
-
-    // QR + lien + HTML embarquable
-    if (qrSectionEl && qrCanvasEl && shareLinkEl) {
+    // --- QR + lien + HTML intégrable (backend génère l'image) ---
+    if (qrSectionEl && shareLinkEl) {
       qrSectionEl.classList.remove("hidden");
 
-      // Lien de vérification
-      const linkUrl =
+      const apiBase = getApiBase().replace(/\/+$/, ""); // enlève le / final
+      const verifyUrl =
         data.qr_url ||
         (location.origin + "/verify.html?token_id=" + encodeURIComponent(data.token_id));
-      shareLinkEl.textContent = linkUrl;
 
-      // 🔹 Code HTML intégrable (image + lien)
+      const imgUrl = apiBase + "/v1/tokens/" + encodeURIComponent(data.token_id) + "/qr";
+
+      // Aperçu image QR
+      if (qrPreviewEl) {
+        qrPreviewEl.src = imgUrl;
+      }
+
+      // Lien de vérification
+      shareLinkEl.textContent = verifyUrl;
+
+      // Code HTML intégrable (image + lien)
       if (embedHtmlEl) {
-        const apiBase = getApiBase().replace(/\/+$/, ""); // enlève un / final au cas où
-        const imgUrl  = apiBase + "/v1/tokens/" + encodeURIComponent(data.token_id) + "/qr";
-
         const htmlSnippet =
-`<a href="${linkUrl}" target="_blank" rel="noopener">
+`<a href="${verifyUrl}" target="_blank" rel="noopener">
   <img src="${imgUrl}"
        alt="QR FoodGoov pour le lot ${data.token_id}"
        width="220"
        height="220">
 </a>`;
-
         embedHtmlEl.value = htmlSnippet;
       }
 
-      // bouton "Copier le lien"
+      // Bouton "Copier le lien"
       if (shareBtnEl) {
         shareBtnEl.onclick = async () => {
           const text = shareLinkEl.textContent || "";
@@ -493,11 +476,6 @@ async function doMint() {
         };
       }
     }
-  } catch (e) {
-    mintResultEl.textContent = "Erreur: " + (e.message || e);
-  }
-}
-
 // --- Nouveau : téléchargement du QR via le backend ---
 function downloadQR() {
   const base = getApiBase();
